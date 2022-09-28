@@ -1,0 +1,74 @@
+{
+    "dg": "08/07/2022",
+    "hg": "13:49:50",
+    "f": "S",
+    "c": "ele2022",
+    "pl": [
+        {
+            "cd": "8417",
+            "cdpr": "7296",
+            "dt": "01/10/2022",
+            "dtlim": "01/01/2024",
+            "e": [
+                {
+                    "cd": "9579",
+                    "cdt2": "9580",
+                    "nm": "Eleição Ordinária Estadual - 2022 - 8417 1&#186; Turno",
+                    "t": "1",
+                    "tp": "1",
+                    "abr": [
+                        {
+                            "cd": "BR",
+                            "cp": [
+                                {
+                                    "cd": "3",
+                                    "ds": "Governador",
+                                    "tp": "1"
+                                },
+                                {
+                                    "cd": "5",
+                                    "ds": "Senador",
+                                    "tp": "1"
+                                },
+                                {
+                                    "cd": "6",
+                                    "ds": "Deputado Federal",
+                                    "tp": "2"
+                                },
+                                {
+                                    "cd": "7",
+                                    "ds": "Deputado Estadual",
+                                    "tp": "2"
+                                },
+                                {
+                                    "cd": "8",
+                                    "ds": "Deputado Distrital",
+                                    "tp": "2"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "cd": "9577",
+                    "cdt2": "9578",
+                    "nm": "Eleição Ordinária Federal - 2022 - 8417 1&#186; Turno",
+                    "t": "1",
+                    "tp": "8",
+                    "abr": [
+                        {
+                            "cd": "BR",
+                            "cp": [
+                                {
+                                    "cd": "1",
+                                    "ds": "Presidente",
+                                    "tp": "1"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
