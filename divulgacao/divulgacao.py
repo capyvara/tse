@@ -1,10 +1,13 @@
 import os
 import re
+import json
+import datetime
 import requests
 import urllib.parse
 
 HOST="https://resultados-sim.tse.jus.br"
 ENVIRONMENT="teste"
+BASEURL=f"{HOST}/{ENVIRONMENT}"
 
 # Stuff from comum/config/ele-c.json
 CYCLE="ele2022"
@@ -13,12 +16,6 @@ ELECTIONS=[9240, 9238]
 BASE_DOWNLOAD_PATH="data/download"
 
 STATES = "BR AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO ZZ".split()
-
-def get_baseurl_common():
-    return f"{HOST}/{ENVIRONMENT}/comum"
-
-def get_baseurl_cycle():
-    return f"{HOST}/{ENVIRONMENT}/{CYCLE}"
 
 def download_file(url, static=True):
     url_path = os.path.relpath(urllib.parse.urlparse(url).path, "/")
@@ -37,30 +34,30 @@ def download_file(url, static=True):
         with open(target_path, "wb") as f:
             f.write(response.content)
 
+        return response.text
 
-print(f"Host: {HOST}")
-print(f"Environment: {ENVIRONMENT}")
-print(f"Cycle: {CYCLE}")
+def download_index(election):
+    config_url = f"{BASEURL}/{CYCLE}/{election}/config"
 
-download_file(f"{get_baseurl_common()}/config/ele-c.json")
-
-def download_configs(election):
-    base_url = f"{get_baseurl_cycle()}/{election}/config"
-    
-    download_file(f"{base_url}/cert-e{election:06}-a.cer")
-    download_file(f"{base_url}/mun-e{election:06}-cm.json")
-    download_file(f"{base_url}/mun-e{election:06}-cm.sig")
-    
-    # Indexes
+    index = {}
+        
     for state in STATES:
         state = state.lower()
-        download_file(f"{base_url}/{state}/{state}-e{election:06}-i.json", False)
+        text = download_file(f"{config_url}/{state}/{state}-e{election:06}-i.json", False)
 
-def get_fullpath(filename):
+        data = json.loads(text)
+        for entry in data["arq"]:
+            filename = entry["nm"]
+            filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
+            index[filename] = filedate
+
+    return index
+
+def get_path(filename):
     if filename == "ele-c.json":
         return f"comum/config/{filename}"
 
-    result = re.match(r"^(cert|mun|\w{2}).*-e(?P<election>\d{6}).*-(?P<type>[^\.]+?)\.\w+")
+    result = re.match(r"^(?P<state>cert|mun|\w{2}).*-e(?P<election>\d{6}).*-(?P<type>[^\.]+?)\.\w+", filename)
     if result:
         result_state = result.group("state")
         result_election = result.group("election").lstrip('0')
@@ -76,13 +73,17 @@ def get_fullpath(filename):
             return f"{CYCLE}/{result_election}/dados-simplificados/{result_state}/{filename}"
 
         return f"{CYCLE}/{result_election}/dados/{result_state}/{filename}"
-
-def download_dados(election):
-    base_url = f"{get_baseurl_cycle()}/{election}/dados"
-    for state in STATES:
-        state = state.lower()
         
+
+print(f"Host: {HOST}")
+print(f"Environment: {ENVIRONMENT}")
+print(f"Cycle: {CYCLE}")
+
+current_index = {}
 
 for election in ELECTIONS:
     print(f"Dowloading election: {election}")
-    download_configs(election)
+    downloaded_index = download_index(election)
+
+    for filename, filedate in downloaded_index.items():
+        download_file(f"{BASEURL}/{get_path(filename)}")
