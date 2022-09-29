@@ -2,7 +2,6 @@ import os
 import re
 import json
 import datetime
-import requests
 import scrapy
 import logging
 import urllib.parse
@@ -53,9 +52,6 @@ class DivulgaSpider(scrapy.Spider):
             os.utime(target_path, (dt_epoch, dt_epoch))
 
     def load_index(self, election):
-        if not "index" in self.state:
-            self.state["index"] = {}
-
         files_store = self.settings['FILES_STORE']
         base_path = f"{files_store}/{self.ENVIRONMENT}/{self.CYCLE}/{election}/config"
         for state in self.STATES:
@@ -73,20 +69,25 @@ class DivulgaSpider(scrapy.Spider):
                     if os.path.exists(f"{files_store}/{self.ENVIRONMENT}/{path}"):
                         self.state["index"][filename] = filedate
     
-            logging.info(f"Loading index from: {election}-{state}, total index size {len(self.state['index'])}")
+            logging.info(f"Loading index from: {election}-{state}, size {len(data['arq'])}")
 
     def start_requests(self):
         logging.info(f"Host: {self.HOST}")
         logging.info(f"Environment: {self.ENVIRONMENT}")
         logging.info(f"Cycle: {self.CYCLE}")
 
+        if not "index" in self.state:
+            self.state["index"] = {}
+            for election in self.ELECTIONS:
+                self.load_index(election)
+
+        logging.info(f"Total current index size {len(self.state['index'])}")
+
         for election in self.ELECTIONS:
             logging.info(f"Queueing election: {election}")
             yield from self.generate_requests_index(election)
 
     def generate_requests_index(self, election):
-        self.load_index(election)
-
         config_url = f"{self.BASEURL}/{self.CYCLE}/{election}/config"
             
         for state in self.STATES:
@@ -104,8 +105,6 @@ class DivulgaSpider(scrapy.Spider):
             filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
             index[filename] = filedate
 
-        logging.info(f"Parsed index for {election}-{state}, size {len(index)}")
-
         current_index = self.state["index"]
         
         for filename, filedate in index.items():
@@ -114,6 +113,8 @@ class DivulgaSpider(scrapy.Spider):
                 priority = 1 if type in {"c", "a", "cm", "r"} else 0
                 yield scrapy.Request(f"{self.BASEURL}/{path}", self.parse_file, priority=priority,
                     cb_kwargs={"filename": filename, "filedate": filedate})
+
+        logging.info(f"Parsed index for {election}-{state}, size {len(index)}, total queue size {len(self.crawler.engine.slot.scheduler)}")
 
     def parse_file(self, response, filename, filedate):
         self.persist_response(response, filedate)
