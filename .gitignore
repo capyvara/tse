@@ -153,6 +153,7 @@ data/download/
 data/output/
 data/log/
 data/temp/
+data/crawls
 
 nohup.out
 *.o

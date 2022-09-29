@@ -11,6 +11,22 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": false
+        },
+        {
+            "name": "Scrapy Current File",
+            "type": "python",
+            "request": "launch",
+            "module": "scrapy",
+            "cwd": "${workspaceRoot}",
+            "args": [
+                "runspider",
+                "${file}",
+                "-s",
+                "AUTOTHROTTLE_DEBUG=False",
+                "--loglevel=DEBUG"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
         }
     ]
 }
