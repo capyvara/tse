@@ -9,15 +9,23 @@ import urllib.parse
 class DivulgaSpider(scrapy.Spider):
     name = 'divulga'
     
-    HOST="https://resultados-sim.tse.jus.br"
-    ENVIRONMENT="teste"
-    BASEURL=f"{HOST}/{ENVIRONMENT}"
+    # Sim env
+    #HOST="https://resultados-sim.tse.jus.br"
+    #ENVIRONMENT="teste"
+    #CYCLE="ele2022"
+    #ELECTIONS=[9240, 9238]
+    #custom_settings = { "JOBDIR": "data/crawls/divulga-sim" }
 
-    # Stuff from comum/config/ele-c.json
+    # Prod env
+    HOST="https://resultados.tse.jus.br"
+    ENVIRONMENT="oficial"
     CYCLE="ele2022"
-    ELECTIONS=[9240, 9238]
+    ELECTIONS=[544, 546, 548]
+    custom_settings = { "JOBDIR": "data/crawls/divulga-prod" }
 
     STATES = "BR AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO ZZ".lower().split()
+
+    BASEURL=f"{HOST}/{ENVIRONMENT}"
 
     def extract_path_info(self, filename):
         if filename == "ele-c.json":
@@ -81,6 +89,9 @@ class DivulgaSpider(scrapy.Spider):
             for election in self.ELECTIONS:
                 self.load_index(election)
 
+        if not "pending" in self.state:
+            self.state["pending"] = set()
+
         logging.info(f"Total current index size {len(self.state['index'])}")
 
         for election in self.ELECTIONS:
@@ -92,7 +103,7 @@ class DivulgaSpider(scrapy.Spider):
             
         for state in self.STATES:
             yield scrapy.Request(f"{config_url}/{state}/{state}-e{election:06}-i.json", 
-                self.parse_index, cb_kwargs={"election": election, "state":state})
+                self.parse_index, dont_filter=True, cb_kwargs={"election": election, "state":state})
 
     def parse_index(self, response, election, state):
         self.persist_response(response)
@@ -109,14 +120,20 @@ class DivulgaSpider(scrapy.Spider):
         
         for filename, filedate in index.items():
             if not filename in current_index or current_index[filename] != filedate:
+                if filename in self.state["pending"]:
+                    logging.debug(f"Skipping pending duplicated query {filename}")
+                    continue
+
+                self.state["pending"].add(filename)
                 path, type = self.extract_path_info(filename)
                 priority = 1 if type in {"c", "a", "cm", "r"} else 0
                 yield scrapy.Request(f"{self.BASEURL}/{path}", self.parse_file, priority=priority,
-                    cb_kwargs={"filename": filename, "filedate": filedate})
+                    dont_filter=True, cb_kwargs={"filename": filename, "filedate": filedate})
 
         logging.info(f"Parsed index for {election}-{state}, size {len(index)}, total queue size {len(self.crawler.engine.slot.scheduler)}")
 
     def parse_file(self, response, filename, filedate):
         self.persist_response(response, filedate)
         self.state["index"][filename] = filedate
+        self.state["pending"].remove(filename)
                 
