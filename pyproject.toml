@@ -5,8 +5,7 @@ description = ""
 authors = ["Marcelo Oliveira <capyvara@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.9"
-requests = "^2.28.1"
+python = "^3.6"
 Scrapy = "^2.6.3"
 
 [tool.poetry.dev-dependencies]
