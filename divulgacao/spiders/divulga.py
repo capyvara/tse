@@ -10,18 +10,18 @@ class DivulgaSpider(scrapy.Spider):
     name = 'divulga'
     
     # Sim env
-    HOST="https://resultados-sim.tse.jus.br"
-    ENVIRONMENT="teste"
-    CYCLE="ele2022"
-    ELECTIONS=[9240, 9238]
-    custom_settings = { "JOBDIR": "data/crawls/divulga-sim" }
+    # HOST="https://resultados-sim.tse.jus.br"
+    # ENVIRONMENT="teste"
+    # CYCLE="ele2022"
+    # ELECTIONS=[9240, 9238]
+    # custom_settings = { "JOBDIR": "data/crawls/divulga-sim" }
 
     # Prod env
-    # HOST="https://resultados.tse.jus.br"
-    # ENVIRONMENT="oficial"
-    # CYCLE="ele2022"
-    # ELECTIONS=[544, 546, 548]
-    # custom_settings = { "JOBDIR": "data/crawls/divulga-prod" }
+    HOST="https://resultados.tse.jus.br"
+    ENVIRONMENT="oficial"
+    CYCLE="ele2022"
+    ELECTIONS=[544, 546, 548]
+    custom_settings = { "JOBDIR": "data/crawls/divulga-prod" }
 
     STATES = "BR AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO ZZ".lower().split()
 
@@ -41,24 +41,22 @@ class DivulgaSpider(scrapy.Spider):
 
             result = type(self)._regex.match(filename)
             if result:
-                self.state = result.group("state")
-                self.mun = result.group("mun")
-                self.cand = result.group("cand")
-                self.election = result.group("election")
-                self.cand = result.group("cand")
+                self.state = result["state"]
+                self.mun = result["mun"].lstrip("0") if result["mun"] else None
+                self.cand = result["cand"].lstrip("0") if result["cand"] else None
+                self.election = result["election"].lstrip("0") if result["election"] else None
+                self.ver = result["ver"].lstrip("0") if result["ver"] else None
                 self.type = result.group("type")
                 self.ext = result.group("ext")
 
-                uelection = self.election.lstrip("0")
-
                 if self.state == "cert" or self.state == "mun":
-                    self.path = f"{DivulgaSpider.CYCLE}/{uelection}/config/{filename}"
+                    self.path = f"{DivulgaSpider.CYCLE}/{self.election}/config/{filename}"
                 elif self.type == "i":
-                    self.path = f"{DivulgaSpider.CYCLE}/{uelection}/config/{self.state}/{filename}"
+                    self.path = f"{DivulgaSpider.CYCLE}/{self.election}/config/{self.state}/{filename}"
                 elif self.type == "r":
-                    self.path = f"{DivulgaSpider.CYCLE}/{uelection}/dados-simplificados/{self.state}/{filename}"
+                    self.path = f"{DivulgaSpider.CYCLE}/{self.election}/dados-simplificados/{self.state}/{filename}"
                 else:
-                    self.path = f"{DivulgaSpider.CYCLE}/{uelection}/dados/{self.state}/{filename}"
+                    self.path = f"{DivulgaSpider.CYCLE}/{self.election}/dados/{self.state}/{filename}"
             else:
                 raise ValueError("Filename format not recognized")
             
@@ -83,6 +81,9 @@ class DivulgaSpider(scrapy.Spider):
 
             info = self.FileInfo(filename)
             if (info.state == "cert" or info.state == "mun") and state != "br":
+                continue
+
+            if state != info.state:
                 continue
 
             # Uncomment to skip signature files
@@ -156,9 +157,9 @@ class DivulgaSpider(scrapy.Spider):
 
             self.state["pending"].add(info.filename)
 
-            priority = 0 if info.type == "v" else 1
+            priority = 0 if info.type == "v" else 2
 
-            logging.debug(f"Queueing file {info.filename} - priority:{priority} old:{current_index.get(info.filename)} new:{filedate}")
+            logging.debug(f"Queueing file {info.filename} [{current_index.get(info.filename)} > {filedate}]")
 
             yield scrapy.Request(f"{self.BASEURL}/{info.path}", self.parse_file, errback=self.errback_file, priority=priority,
                 dont_filter=True, cb_kwargs={"info": info, "filedate": filedate})
@@ -173,13 +174,41 @@ class DivulgaSpider(scrapy.Spider):
         self.state["index"][info.filename] = filedate
         self.state["pending"].discard(info.filename)
 
-        if info.type == "r":
-            data = json.loads(response.body)
-            yield from self.download_pictures(data)
+        if info.type == "f" and info.ext == "json":
+            try:
+                data = json.loads(response.body)
+                yield from self.query_pictures(data, info)
+            except json.JSONDecodeError:
+                logging.warning(f"Malformed json at {info.filename}, skipping parse")
+                pass
 
     def errback_file(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
         self.state["pending"].discard(failure.request.cb_kwargs["info"].filename)
 
-    def download_pictures(self, data):
-        return
+    def query_pictures(self, data, info):
+        for agr in data["carg"]["agr"]:
+            for par in agr["par"]:
+                for cand in par["cand"]:
+                    sqcand = cand["sqcand"]
+                    filename = f"{sqcand}.jpeg"
+
+                    if filename in self.state["pending"]:
+                        continue
+
+                    # President is br, others go on state specific directories
+                    cand_state = info.state if info.cand != "1" else "br"
+
+                    path = f"{DivulgaSpider.CYCLE}/{info.election}/fotos/{cand_state}/{filename}"
+
+                    target_path = os.path.join(self.settings["FILES_STORE"], self.ENVIRONMENT, path)
+                    if not os.path.exists(target_path):
+                        self.state["pending"].add(filename)
+
+                        logging.debug(f"Queueing picture {sqcand}.jpeg")
+                        yield scrapy.Request(f"{self.BASEURL}/{path}", self.parse_picture, priority=1,
+                            dont_filter=True, cb_kwargs={"filename": filename})
+
+    def parse_picture(self, response, filename):
+        self.persist_response(response)
+        self.state["pending"].discard(filename)
