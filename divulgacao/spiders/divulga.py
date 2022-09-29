@@ -10,44 +10,58 @@ class DivulgaSpider(scrapy.Spider):
     name = 'divulga'
     
     # Sim env
-    #HOST="https://resultados-sim.tse.jus.br"
-    #ENVIRONMENT="teste"
-    #CYCLE="ele2022"
-    #ELECTIONS=[9240, 9238]
-    #custom_settings = { "JOBDIR": "data/crawls/divulga-sim" }
+    HOST="https://resultados-sim.tse.jus.br"
+    ENVIRONMENT="teste"
+    CYCLE="ele2022"
+    ELECTIONS=[9240, 9238]
+    custom_settings = { "JOBDIR": "data/crawls/divulga-sim" }
 
     # Prod env
-    HOST="https://resultados.tse.jus.br"
-    ENVIRONMENT="oficial"
-    CYCLE="ele2022"
-    ELECTIONS=[544, 546, 548]
-    custom_settings = { "JOBDIR": "data/crawls/divulga-prod" }
+    # HOST="https://resultados.tse.jus.br"
+    # ENVIRONMENT="oficial"
+    # CYCLE="ele2022"
+    # ELECTIONS=[544, 546, 548]
+    # custom_settings = { "JOBDIR": "data/crawls/divulga-prod" }
 
     STATES = "BR AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO ZZ".lower().split()
 
     BASEURL=f"{HOST}/{ENVIRONMENT}"
 
-    def extract_path_info(self, filename):
-        if filename == "ele-c.json":
-            return f"comum/config/{filename}", "c"
+    class FileInfo:
+        _regex = re.compile(r"^(?P<state>cert|mun|\w{2})(?P<mun>\d{5})?(?:-c(?P<cand>\d{4}))?-e(?P<election>\d{6})(?:-(?P<ver>\d{3}))?-(?P<type>\w{1,2}?)\.(?P<ext>\w+)")
 
-        result = re.match(r"^(?P<state>cert|mun|\w{2}).*-e(?P<election>\d{6}).*-(?P<type>[^\.]+?)\.\w+", filename)
-        if result:
-            state = result.group("state")
-            election = result.group("election").lstrip('0')
-            type = result.group("type")
+        def __init__(self, filename):
+            self.filename = filename
 
-            if state == "cert" or state == "mun":
-                return f"{self.CYCLE}/{election}/config/{filename}", type
+            if filename == "ele-c.json":
+                self.path = f"comum/config/{filename}"
+                self.type = "c"
+                self.ext = "json"
+                return
 
-            if type == "i":
-                return f"{self.CYCLE}/{election}/config/{state}/{filename}", type
+            result = type(self)._regex.match(filename)
+            if result:
+                self.state = result.group("state")
+                self.mun = result.group("mun")
+                self.cand = result.group("cand")
+                self.election = result.group("election")
+                self.cand = result.group("cand")
+                self.type = result.group("type")
+                self.ext = result.group("ext")
 
-            if type == "r":
-                return f"{self.CYCLE}/{election}/dados-simplificados/{state}/{filename}", type
+                uelection = self.election.lstrip("0")
 
-            return f"{self.CYCLE}/{election}/dados/{state}/{filename}", type
-
+                if self.state == "cert" or self.state == "mun":
+                    self.path = f"{DivulgaSpider.CYCLE}/{uelection}/config/{filename}"
+                elif self.type == "i":
+                    self.path = f"{DivulgaSpider.CYCLE}/{uelection}/config/{self.state}/{filename}"
+                elif self.type == "r":
+                    self.path = f"{DivulgaSpider.CYCLE}/{uelection}/dados-simplificados/{self.state}/{filename}"
+                else:
+                    self.path = f"{DivulgaSpider.CYCLE}/{uelection}/dados/{self.state}/{filename}"
+            else:
+                raise ValueError("Filename format not recognized")
+            
     def persist_response(self, response, filedate=None):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
         target_path = os.path.join(self.settings["FILES_STORE"], url_path)
@@ -59,6 +73,24 @@ class DivulgaSpider(scrapy.Spider):
             dt_epoch = filedate.timestamp()
             os.utime(target_path, (dt_epoch, dt_epoch))
 
+    def expand_index(self, state, data):
+        for entry in data["arq"]:
+            filename = entry["nm"]
+            filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
+
+            if filename == "ele-c.json":
+                continue
+
+            info = self.FileInfo(filename)
+            if (info.state == "cert" or info.state == "mun") and state != "br":
+                continue
+
+            # Uncomment to skip signature files
+            #if info.ext == "sig":
+            #    continue
+
+            yield info, filedate
+
     def load_index(self, election):
         files_store = self.settings['FILES_STORE']
         base_path = f"{files_store}/{self.ENVIRONMENT}/{self.CYCLE}/{election}/config"
@@ -69,15 +101,11 @@ class DivulgaSpider(scrapy.Spider):
 
             with open(file_path, "r") as f:
                 data = json.loads(f.read())
-                for entry in data["arq"]:
-                    filename = entry["nm"]
-                    filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
-
-                    path, type = self.extract_path_info(filename)
-                    if os.path.exists(f"{files_store}/{self.ENVIRONMENT}/{path}"):
-                        self.state["index"][filename] = filedate
+                for info, filedate in self.expand_index(state, data):
+                    if os.path.exists(f"{files_store}/{self.ENVIRONMENT}/{info.path}"):
+                        self.state["index"][info.filename] = filedate
     
-            logging.info(f"Loading index from: {election}-{state}, size {len(data['arq'])}")
+            logging.info(f"Loaded index from: {election}-{state}, size {len(data['arq'])}")
 
     def start_requests(self):
         logging.info(f"Host: {self.HOST}")
@@ -88,11 +116,19 @@ class DivulgaSpider(scrapy.Spider):
             self.state["index"] = {}
             for election in self.ELECTIONS:
                 self.load_index(election)
+        
+        self.state["pending"] = set()
 
-        if not "pending" in self.state:
-            self.state["pending"] = set()
+        logging.info(f"Index size {len(self.state['index'])}")
+        logging.info(f"Pending size {len(self.state['pending'])}")
 
-        logging.info(f"Total current index size {len(self.state['index'])}")
+        yield from self.query_common()
+
+    def query_common(self):
+        yield scrapy.Request(f"{self.BASEURL}/comum/config/ele-c.json", self.parse_config, dont_filter=True)
+
+    def parse_config(self, response):
+        self.persist_response(response)
 
         for election in self.ELECTIONS:
             logging.info(f"Queueing election: {election}")
@@ -102,38 +138,48 @@ class DivulgaSpider(scrapy.Spider):
         config_url = f"{self.BASEURL}/{self.CYCLE}/{election}/config"
             
         for state in self.STATES:
-            yield scrapy.Request(f"{config_url}/{state}/{state}-e{election:06}-i.json", 
-                self.parse_index, dont_filter=True, cb_kwargs={"election": election, "state":state})
+            filename = f"{state}-e{election:06}-i.json"
+            logging.debug(f"Queueing index file {filename}")
+            yield scrapy.Request(f"{config_url}/{state}/{filename}", self.parse_index, errback=self.errback_index,
+                dont_filter=True, priority=2, cb_kwargs={"election": election, "state":state})
 
     def parse_index(self, response, election, state):
         self.persist_response(response)
 
-        data = json.loads(response.body)
-
-        index = {}
-        for entry in data["arq"]:
-            filename = entry["nm"]
-            filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
-            index[filename] = filedate
-
         current_index = self.state["index"]
-        
-        for filename, filedate in index.items():
-            if not filename in current_index or current_index[filename] != filedate:
-                if filename in self.state["pending"]:
-                    logging.debug(f"Skipping pending duplicated query {filename}")
-                    continue
 
-                self.state["pending"].add(filename)
-                path, type = self.extract_path_info(filename)
-                priority = 1 if type in {"c", "a", "cm", "r"} else 0
-                yield scrapy.Request(f"{self.BASEURL}/{path}", self.parse_file, priority=priority,
-                    dont_filter=True, cb_kwargs={"filename": filename, "filedate": filedate})
+        data = json.loads(response.body)
+        for info, filedate in self.expand_index(state, data):
+            if info.filename in self.state["pending"]:
+                logging.debug(f"Skipping pending duplicated query {info.filename}")
+                continue
 
-        logging.info(f"Parsed index for {election}-{state}, size {len(index)}, total queue size {len(self.crawler.engine.slot.scheduler)}")
+            self.state["pending"].add(info.filename)
 
-    def parse_file(self, response, filename, filedate):
+            priority = 0 if info.type == "v" else 1
+
+            logging.debug(f"Queueing file {info.filename} - priority:{priority} old:{current_index.get(info.filename)} new:{filedate}")
+
+            yield scrapy.Request(f"{self.BASEURL}/{info.path}", self.parse_file, errback=self.errback_file, priority=priority,
+                dont_filter=True, cb_kwargs={"info": info, "filedate": filedate})
+
+        logging.info(f"Parsed index for {election}-{state}, total pending {len(self.state['pending'])}")
+
+    def errback_index(self, failure):
+        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+
+    def parse_file(self, response, info, filedate):
         self.persist_response(response, filedate)
-        self.state["index"][filename] = filedate
-        self.state["pending"].remove(filename)
-                
+        self.state["index"][info.filename] = filedate
+        self.state["pending"].discard(info.filename)
+
+        if info.type == "r":
+            data = json.loads(response.body)
+            yield from self.download_pictures(data)
+
+    def errback_file(self, failure):
+        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+        self.state["pending"].discard(failure.request.cb_kwargs["info"].filename)
+
+    def download_pictures(self, data):
+        return
