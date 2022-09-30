@@ -28,7 +28,7 @@ class DivulgaSpider(scrapy.Spider):
     BASEURL=f"{HOST}/{ENVIRONMENT}"
 
     class FileInfo:
-        _regex = re.compile(r"^(?P<state>cert|mun|\w{2})(?P<mun>\d{5})?(?:-c(?P<cand>\d{4}))?-e(?P<election>\d{6})(?:-(?P<ver>\d{3}))?-(?P<type>\w{1,2}?)\.(?P<ext>\w+)")
+        _regex = re.compile(r"^(?P<prefix>cert|mun)?(?P<state>\w{2})?(?P<mun>\d{5})?(?:-c(?P<cand>\d{4}))?-e(?P<election>\d{6})(?:-(?P<ver>\d{3}))?-(?P<type>\w{1,2}?)\.(?P<ext>\w+)")
 
         def __init__(self, filename):
             self.filename = filename
@@ -41,6 +41,7 @@ class DivulgaSpider(scrapy.Spider):
 
             result = type(self)._regex.match(filename)
             if result:
+                self.prefix =result["prefix"] 
                 self.state = result["state"]
                 self.mun = result["mun"].lstrip("0") if result["mun"] else None
                 self.cand = result["cand"].lstrip("0") if result["cand"] else None
@@ -49,14 +50,14 @@ class DivulgaSpider(scrapy.Spider):
                 self.type = result.group("type")
                 self.ext = result.group("ext")
 
-                if self.state == "cert" or self.state == "mun":
-                    self.path = f"{DivulgaSpider.CYCLE}/{self.election}/config/{filename}"
+                if self.prefix == "cert" or self.prefix == "mun":
+                    self.path = f"{self.election}/config/{filename}"
                 elif self.type == "i":
-                    self.path = f"{DivulgaSpider.CYCLE}/{self.election}/config/{self.state}/{filename}"
+                    self.path = f"{self.election}/config/{self.state}/{filename}"
                 elif self.type == "r":
-                    self.path = f"{DivulgaSpider.CYCLE}/{self.election}/dados-simplificados/{self.state}/{filename}"
+                    self.path = f"{self.election}/dados-simplificados/{self.state}/{filename}"
                 else:
-                    self.path = f"{DivulgaSpider.CYCLE}/{self.election}/dados/{self.state}/{filename}"
+                    self.path = f"{self.election}/dados/{self.state}/{filename}"
             else:
                 raise ValueError("Filename format not recognized")
             
@@ -80,10 +81,10 @@ class DivulgaSpider(scrapy.Spider):
                 continue
 
             info = self.FileInfo(filename)
-            if (info.state == "cert" or info.state == "mun") and state != "br":
+            if (info.prefix == "cert" or info.prefix == "mun") and state != "br":
                 continue
-
-            if state != info.state:
+            
+            if info.state and state != info.state:
                 continue
 
             # Uncomment to skip signature files
@@ -103,7 +104,7 @@ class DivulgaSpider(scrapy.Spider):
             with open(file_path, "r") as f:
                 data = json.loads(f.read())
                 for info, filedate in self.expand_index(state, data):
-                    if os.path.exists(f"{files_store}/{self.ENVIRONMENT}/{info.path}"):
+                    if os.path.exists(f"{files_store}/{self.ENVIRONMENT}/{self.CYCLE}/{info.path}"):
                         self.state["index"][info.filename] = filedate
     
             logging.info(f"Loaded index from: {election}-{state}, size {len(data['arq'])}")
@@ -151,6 +152,9 @@ class DivulgaSpider(scrapy.Spider):
 
         data = json.loads(response.body)
         for info, filedate in self.expand_index(state, data):
+            if info.filename in current_index and filedate <= current_index[info.filename]:
+                continue
+
             if info.filename in self.state["pending"]:
                 logging.debug(f"Skipping pending duplicated query {info.filename}")
                 continue
@@ -161,7 +165,7 @@ class DivulgaSpider(scrapy.Spider):
 
             logging.debug(f"Queueing file {info.filename} [{current_index.get(info.filename)} > {filedate}]")
 
-            yield scrapy.Request(f"{self.BASEURL}/{info.path}", self.parse_file, errback=self.errback_file, priority=priority,
+            yield scrapy.Request(f"{self.BASEURL}/{self.CYCLE}/{info.path}", self.parse_file, errback=self.errback_file, priority=priority,
                 dont_filter=True, cb_kwargs={"info": info, "filedate": filedate})
 
         logging.info(f"Parsed index for {election}-{state}, total pending {len(self.state['pending'])}")
@@ -186,28 +190,32 @@ class DivulgaSpider(scrapy.Spider):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
         self.state["pending"].discard(failure.request.cb_kwargs["info"].filename)
 
-    def query_pictures(self, data, info):
+    def expand_candidates(self, data):
         for agr in data["carg"]["agr"]:
             for par in agr["par"]:
                 for cand in par["cand"]:
-                    sqcand = cand["sqcand"]
-                    filename = f"{sqcand}.jpeg"
+                    yield cand
 
-                    if filename in self.state["pending"]:
-                        continue
+    def query_pictures(self, data, info):
+        for cand in self.expand_candidates(data):
+            sqcand = cand["sqcand"]
+            filename = f"{sqcand}.jpeg"
 
-                    # President is br, others go on state specific directories
-                    cand_state = info.state if info.cand != "1" else "br"
+            if filename in self.state["pending"]:
+                continue
 
-                    path = f"{DivulgaSpider.CYCLE}/{info.election}/fotos/{cand_state}/{filename}"
+            # President is br, others go on state specific directories
+            cand_state = info.state if info.cand != "1" else "br"
 
-                    target_path = os.path.join(self.settings["FILES_STORE"], self.ENVIRONMENT, path)
-                    if not os.path.exists(target_path):
-                        self.state["pending"].add(filename)
+            path = f"{self.CYCLE}/{info.election}/fotos/{cand_state}/{filename}"
 
-                        logging.debug(f"Queueing picture {sqcand}.jpeg")
-                        yield scrapy.Request(f"{self.BASEURL}/{path}", self.parse_picture, priority=1,
-                            dont_filter=True, cb_kwargs={"filename": filename})
+            target_path = os.path.join(self.settings["FILES_STORE"], self.ENVIRONMENT, path)
+            if not os.path.exists(target_path):
+                self.state["pending"].add(filename)
+
+                logging.debug(f"Queueing picture {sqcand}.jpeg")
+                yield scrapy.Request(f"{self.BASEURL}/{path}", self.parse_picture, priority=1,
+                    dont_filter=True, cb_kwargs={"filename": filename})
 
     def parse_picture(self, response, filename):
         self.persist_response(response)
