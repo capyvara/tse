@@ -53,7 +53,7 @@ class DivulgaSpider(scrapy.Spider):
             with open(file_path, "r") as f:
                 data = json.loads(f.read())
                 for info, filedate in FileInfo.expand_index(state, data):
-                    size = size + 1
+                    size += 1
 
                     target_path = f"{files_store}/{self.ENVIRONMENT}/{self.CYCLE}/{info.path}"
                     
@@ -67,7 +67,7 @@ class DivulgaSpider(scrapy.Spider):
                         continue
 
                     self.state["index"][info.filename] = filedate
-                    added = added + 1
+                    added += 1
     
             logging.info(f"Loaded index from: {election}-{state}, size {size}, added {added}")
 
@@ -113,8 +113,13 @@ class DivulgaSpider(scrapy.Spider):
 
         current_index = self.state["index"]
 
+        size = 0
+        added = 0
+
         data = json.loads(response.body)
         for info, filedate in FileInfo.expand_index(state, data):
+            size += 1
+
             if info.filename in current_index and filedate <= current_index[info.filename]:
                 continue
 
@@ -123,6 +128,7 @@ class DivulgaSpider(scrapy.Spider):
                 continue
 
             self.state["pending"].add(info.filename)
+            added += 1
 
             priority = 0 if info.type == "v" else 2
 
@@ -131,7 +137,7 @@ class DivulgaSpider(scrapy.Spider):
             yield scrapy.Request(f"{self.BASEURL}/{self.CYCLE}/{info.path}", self.parse_file, errback=self.errback_file, priority=priority,
                 dont_filter=True, cb_kwargs={"info": info, "filedate": filedate})
 
-        logging.info(f"Parsed index for {election}-{state}, total pending {len(self.state['pending'])}")
+        logging.info(f"Parsed index for {election}-{state}, size {size}, added {added}, total pending {len(self.state['pending'])}")
 
     def errback_index(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
