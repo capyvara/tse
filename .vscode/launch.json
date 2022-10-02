@@ -9,6 +9,7 @@
             "type": "python",
             "request": "launch",
             "program": "${file}",
+            "cwd": "${workspaceRoot}",
             "console": "integratedTerminal",
             "justMyCode": false
         },
@@ -23,6 +24,8 @@
                 "${file}",
                 "-s",
                 "AUTOTHROTTLE_DEBUG=False",
+                "-s", 
+                "SCHEDULER_DEBUG=True",
                 "--loglevel=DEBUG"
             ],
             "console": "integratedTerminal",

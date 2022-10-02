@@ -1,10 +1,11 @@
 import os
-import re
 import json
 import datetime
 import scrapy
 import logging
 import urllib.parse
+
+from divulgacao.common.fileinfo import FileInfo
 
 class DivulgaSpider(scrapy.Spider):
     name = 'divulga'
@@ -26,40 +27,6 @@ class DivulgaSpider(scrapy.Spider):
     STATES = "BR AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO ZZ".lower().split()
 
     BASEURL=f"{HOST}/{ENVIRONMENT}"
-
-    class FileInfo:
-        _regex = re.compile(r"^(?P<prefix>cert|mun)?(?P<state>\w{2})?(?P<mun>\d{5})?(?:-c(?P<cand>\d{4}))?-e(?P<election>\d{6})(?:-(?P<ver>\d{3}))?-(?P<type>\w{1,2}?)\.(?P<ext>\w+)")
-
-        def __init__(self, filename):
-            self.filename = filename
-
-            if filename == "ele-c.json":
-                self.path = f"comum/config/{filename}"
-                self.type = "c"
-                self.ext = "json"
-                return
-
-            result = type(self)._regex.match(filename)
-            if result:
-                self.prefix =result["prefix"] 
-                self.state = result["state"]
-                self.mun = result["mun"].lstrip("0") if result["mun"] else None
-                self.cand = result["cand"].lstrip("0") if result["cand"] else None
-                self.election = result["election"].lstrip("0") if result["election"] else None
-                self.ver = result["ver"].lstrip("0") if result["ver"] else None
-                self.type = result.group("type")
-                self.ext = result.group("ext")
-
-                if self.prefix == "cert" or self.prefix == "mun":
-                    self.path = f"{self.election}/config/{filename}"
-                elif self.type == "i":
-                    self.path = f"{self.election}/config/{self.state}/{filename}"
-                elif self.type == "r":
-                    self.path = f"{self.election}/dados-simplificados/{self.state}/{filename}"
-                else:
-                    self.path = f"{self.election}/dados/{self.state}/{filename}"
-            else:
-                raise ValueError("Filename format not recognized")
             
     def persist_response(self, response, filedate=None):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
@@ -72,27 +39,6 @@ class DivulgaSpider(scrapy.Spider):
             dt_epoch = filedate.timestamp()
             os.utime(target_path, (dt_epoch, dt_epoch))
 
-    def expand_index(self, state, data):
-        for entry in data["arq"]:
-            filename = entry["nm"]
-            filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
-
-            if filename == "ele-c.json":
-                continue
-
-            info = self.FileInfo(filename)
-            if (info.prefix == "cert" or info.prefix == "mun") and state != "br":
-                continue
-            
-            if info.state and state != info.state:
-                continue
-
-            # Uncomment to skip signature files
-            #if info.ext == "sig":
-            #    continue
-
-            yield info, filedate
-
     def load_index(self, election):
         files_store = self.settings['FILES_STORE']
         base_path = f"{files_store}/{self.ENVIRONMENT}/{self.CYCLE}/{election}/config"
@@ -101,13 +47,29 @@ class DivulgaSpider(scrapy.Spider):
             if not os.path.exists(file_path):
                 continue
 
+            size = 0
+            added = 0
+
             with open(file_path, "r") as f:
                 data = json.loads(f.read())
-                for info, filedate in self.expand_index(state, data):
-                    if os.path.exists(f"{files_store}/{self.ENVIRONMENT}/{self.CYCLE}/{info.path}"):
-                        self.state["index"][info.filename] = filedate
+                for info, filedate in FileInfo.expand_index(state, data):
+                    size = size + 1
+
+                    target_path = f"{files_store}/{self.ENVIRONMENT}/{self.CYCLE}/{info.path}"
+                    
+                    if not os.path.exists(target_path):
+                        logging.debug(f"Target path not found, skipping index {info.filename}")
+                        continue
+                    
+                    modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(target_path))
+                    if filedate != modified_time:
+                        logging.debug(f"Index date mismatch, skipping index {info.filename} {modified_time} > {filedate}")
+                        continue
+
+                    self.state["index"][info.filename] = filedate
+                    added = added + 1
     
-            logging.info(f"Loaded index from: {election}-{state}, size {len(data['arq'])}")
+            logging.info(f"Loaded index from: {election}-{state}, size {size}, added {added}")
 
     def start_requests(self):
         logging.info(f"Host: {self.HOST}")
@@ -115,6 +77,7 @@ class DivulgaSpider(scrapy.Spider):
         logging.info(f"Cycle: {self.CYCLE}")
 
         if not "index" in self.state:
+            logging.info("No current index found, loading from downloaded index files")
             self.state["index"] = {}
             for election in self.ELECTIONS:
                 self.load_index(election)
@@ -151,7 +114,7 @@ class DivulgaSpider(scrapy.Spider):
         current_index = self.state["index"]
 
         data = json.loads(response.body)
-        for info, filedate in self.expand_index(state, data):
+        for info, filedate in FileInfo.expand_index(state, data):
             if info.filename in current_index and filedate <= current_index[info.filename]:
                 continue
 
