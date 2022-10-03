@@ -14,6 +14,6 @@ do
 
     echo "Took $SECONDS"
     DELAY=$((10 - SECONDS))
-    if [[ $DELAY < 2 ]]; then DELAY=2; fi
+    if [[ $DELAY < 5 ]]; then DELAY=5; fi
     sleep $DELAY
 done
