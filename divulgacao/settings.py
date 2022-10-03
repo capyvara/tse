@@ -20,12 +20,6 @@ CONCURRENT_REQUESTS = 100
 CONCURRENT_REQUESTS_PER_DOMAIN = 100
 RETRY_TIMES = 5
 
-EXTENSIONS = {
-   "scrapy.extensions.spiderstate.SpiderState": 1,
-}
-
-#DUPEFILTER_CLASS = "scrapy.dupefilters.BaseDupeFilter"
-
 FILES_STORE = "data/download"
 
 AUTOTHROTTLE_ENABLED = True
