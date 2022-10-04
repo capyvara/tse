@@ -57,7 +57,7 @@ class DivulgaSpider(BaseSpider):
         return json_dict
 
     def load_index(self):
-        index_path = self.get_local_path("index.json", root=True)
+        index_path = self.get_local_path("index.json", no_cycle=True)
         try:
             with open(index_path, "r") as f:
                 self.index = json.load(f, object_hook=self.json_parse)
@@ -72,7 +72,7 @@ class DivulgaSpider(BaseSpider):
         logging.info(f"Index size {len(self.index)}")
 
     def save_index(self):
-        index_path = self.get_local_path(f"index.json", root=True)
+        index_path = self.get_local_path(f"index.json", no_cycle=True)
         os.makedirs(os.path.dirname(index_path), exist_ok=True)
         with open(index_path, "w") as f:
             json.dump(self.index, f, default=self.json_serialize)
@@ -89,7 +89,7 @@ class DivulgaSpider(BaseSpider):
         return
 
     def query_common(self):
-        yield scrapy.Request(self.get_full_url(f"{self.environment}/comum/config/ele-c.json", root=True), self.parse_config, dont_filter=True)
+        yield scrapy.Request(self.get_full_url(f"comum/config/ele-c.json", no_cycle=True), self.parse_config, dont_filter=True)
 
     def parse_config(self, response):
         self.persist_response(response)
