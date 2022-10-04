@@ -7,6 +7,8 @@ do
 
     scrapy crawl divulga
 
+    sleep 5
+
     pushd data/download/oficial
     git add .
     git commit -m "Updated state"

@@ -26,3 +26,25 @@ AUTOTHROTTLE_ENABLED = True
 AUTOTHROTTLE_TARGET_CONCURRENCY = 2.0
 
 HTTPCACHE_ENABLED = False
+
+STATES = "br ac al am ap ba ce df es go ma mg ms mt pa pb pe pi pr rj rn ro rr rs sc se sp to zz"
+
+# Sim env
+# HOST = "https://resultados-sim.tse.jus.br"
+# ENVIRONMENT = "teste"
+# CYCLE = "ele2022"
+# ELECTIONS = [9240, 9238]
+# LAWSUIT = []
+
+# Prod env
+HOST = "https://resultados.tse.jus.br"
+ENVIRONMENT = "oficial"
+CYCLE = "ele2022"
+
+# 1st round
+LAWSUIT = [406]
+ELECTIONS = [544, 546, 548]
+
+# 2nd round
+# LAWSUIT = [407]
+# ELECTIONS = [547, 545]
