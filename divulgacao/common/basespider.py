@@ -8,7 +8,7 @@ class BaseSpider(scrapy.Spider):
 
     def get_local_path(self, path, no_cycle=False):
         if no_cycle:
-            return os.path.join(self.settings["FILES_STORE"], {self.environment}, path)
+            return os.path.join(self.settings["FILES_STORE"], self.environment, path)
 
         return os.path.join(self.settings["FILES_STORE"], self.environment, self.cycle, path)
 
