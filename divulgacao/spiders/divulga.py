@@ -12,10 +12,9 @@ class DivulgaSpider(BaseSpider):
     name = "divulga"
     
     def load_states_index(self, election):
-        files_store = self.settings['FILES_STORE']
-        base_path = f"{files_store}/{self.environment}/{self.cycle}/{election}/config"
+        base_path = self.get_local_path(f"{election}/config")
         for state in self.states:
-            file_path = f"{base_path}/{state}/{state}-e{election:06}-i.json"
+            file_path = f"{base_path}/{state}/{state}-e{election:0>6}-i.json"
             if not os.path.exists(file_path):
                 continue
 
@@ -23,11 +22,11 @@ class DivulgaSpider(BaseSpider):
             added = 0
 
             with open(file_path, "r") as f:
-                data = json.loads(f.read())
+                data = json.load(f)
                 for info, filedate in FileInfo.expand_index(state, data):
                     size += 1
 
-                    target_path = f"{files_store}/{self.environment}/{self.cycle}/{info.path}"
+                    target_path = self.get_local_path(info.path)
                     
                     if not os.path.exists(target_path):
                         logging.debug(f"Target path not found, skipping index {info.filename}")
@@ -58,11 +57,10 @@ class DivulgaSpider(BaseSpider):
         return json_dict
 
     def load_index(self):
-        files_store = self.settings['FILES_STORE']
-        index_path = f"{files_store}/{self.environment}/index.json"
+        index_path = self.get_local_path("index.json", root=True)
         try:
             with open(index_path, "r") as f:
-                self.index = json.loads(f.read(), object_hook=self.json_parse)
+                self.index = json.load(f, object_hook=self.json_parse)
 
             logging.info(f"Index {index_path} loaded")
         except:
@@ -74,8 +72,7 @@ class DivulgaSpider(BaseSpider):
         logging.info(f"Index size {len(self.index)}")
 
     def save_index(self):
-        files_store = self.settings['FILES_STORE']
-        index_path = f"{files_store}/{self.environment}/index.json"
+        index_path = self.get_local_path(f"index.json", root=True)
         os.makedirs(os.path.dirname(index_path), exist_ok=True)
         with open(index_path, "w") as f:
             json.dump(self.index, f, default=self.json_serialize)
@@ -92,7 +89,7 @@ class DivulgaSpider(BaseSpider):
         return
 
     def query_common(self):
-        yield scrapy.Request(f"{self.baseurl}/comum/config/ele-c.json", self.parse_config, dont_filter=True)
+        yield scrapy.Request(self.get_full_url("comum/config/ele-c.json", root=True), self.parse_config, dont_filter=True)
 
     def parse_config(self, response):
         self.persist_response(response)
@@ -102,10 +99,10 @@ class DivulgaSpider(BaseSpider):
             yield from self.generate_requests_index(election)
 
     def generate_requests_index(self, election):
-        config_url = f"{self.baseurl}/{self.cycle}/{election}/config"
+        config_url = self.get_full_url(f"{election}/config")
             
         for state in self.states:
-            filename = f"{state}-e{election:06}-i.json"
+            filename = f"{state}-e{election:0>6}-i.json"
             logging.debug(f"Queueing index file {filename}")
             yield scrapy.Request(f"{config_url}/{state}/{filename}", self.parse_index, errback=self.errback_index,
                 dont_filter=True, priority=2, cb_kwargs={"election": election, "state":state})
@@ -136,7 +133,7 @@ class DivulgaSpider(BaseSpider):
 
             logging.debug(f"Queueing file {info.filename} [{current_index.get(info.filename)} > {filedate}]")
 
-            yield scrapy.Request(f"{self.baseurl}/{self.cycle}/{info.path}", self.parse_file, errback=self.errback_file, priority=priority,
+            yield scrapy.Request(self.get_full_url(info.path), self.parse_file, errback=self.errback_file, priority=priority,
                 dont_filter=True, cb_kwargs={"info": info, "filedate": filedate})
 
         logging.info(f"Parsed index for {election}-{state}, size {size}, added {added}, total pending {len(self.pending)}")
@@ -178,14 +175,14 @@ class DivulgaSpider(BaseSpider):
             # President is br, others go on state specific directories
             cand_state = info.state if info.cand != "1" else "br"
 
-            path = f"{self.cycle}/{info.election}/fotos/{cand_state}/{filename}"
+            path = f"{info.election}/fotos/{cand_state}/{filename}"
 
-            target_path = os.path.join(self.settings["FILES_STORE"], self.environment, path)
+            target_path = self.get_local_path(path)
             if not os.path.exists(target_path):
                 self.pending.add(filename)
 
                 logging.debug(f"Queueing picture {sqcand}.jpeg")
-                yield scrapy.Request(f"{self.baseurl}/{path}", self.parse_picture, priority=1,
+                yield scrapy.Request(self.get_full_url(path), self.parse_picture, priority=1,
                     dont_filter=True, cb_kwargs={"filename": filename})
 
     def parse_picture(self, response, filename):

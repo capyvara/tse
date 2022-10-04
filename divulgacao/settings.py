@@ -16,14 +16,14 @@ NEWSPIDER_MODULE = "divulgacao.spiders"
 
 ROBOTSTXT_OBEY = False
 
-CONCURRENT_REQUESTS = 100
-CONCURRENT_REQUESTS_PER_DOMAIN = 100
+CONCURRENT_REQUESTS = 200
+CONCURRENT_REQUESTS_PER_DOMAIN = 200
 RETRY_TIMES = 5
 
 FILES_STORE = "data/download"
 
 AUTOTHROTTLE_ENABLED = True
-AUTOTHROTTLE_TARGET_CONCURRENCY = 2.0
+AUTOTHROTTLE_TARGET_CONCURRENCY = 4.0
 
 HTTPCACHE_ENABLED = False
 
@@ -34,7 +34,7 @@ STATES = "br ac al am ap ba ce df es go ma mg ms mt pa pb pe pi pr rj rn ro rr r
 # ENVIRONMENT = "teste"
 # CYCLE = "ele2022"
 # ELECTIONS = [9240, 9238]
-# LAWSUIT = []
+# PLEA = []
 
 # Prod env
 HOST = "https://resultados.tse.jus.br"
@@ -42,9 +42,9 @@ ENVIRONMENT = "oficial"
 CYCLE = "ele2022"
 
 # 1st round
-LAWSUIT = [406]
-ELECTIONS = [544, 546, 548]
+PLEA = "406"
+ELECTIONS = ["544", "546", "548"]
 
 # 2nd round
-# LAWSUIT = [407]
-# ELECTIONS = [547, 545]
+# PLEA = "407"
+# ELECTIONS = ["545", "547"]
