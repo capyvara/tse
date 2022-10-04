@@ -89,7 +89,7 @@ class DivulgaSpider(BaseSpider):
         return
 
     def query_common(self):
-        yield scrapy.Request(self.get_full_url("comum/config/ele-c.json", root=True), self.parse_config, dont_filter=True)
+        yield scrapy.Request(self.get_full_url(f"{self.environment}/comum/config/ele-c.json", root=True), self.parse_config, dont_filter=True)
 
     def parse_config(self, response):
         self.persist_response(response)

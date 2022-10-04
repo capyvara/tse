@@ -15,4 +15,4 @@ Please read their policy and docs before using the tool.
 - Activate shell/virtual environment `poetry shell`
 
 # Usage
-- Run `scrapy divulga` to update all the files, scrapping is incremental and can be peformed continuously to get latest data if available, files are downloaded to `data/download/...`
+- Run `scrapy crawl divulga` to update all the files, scrapping is incremental and can be peformed continuously to get latest data if available, files are downloaded to `data/download/...`

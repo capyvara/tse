@@ -11,6 +11,20 @@ from divulgacao.common.basespider import BaseSpider
 class UrnaSpider(BaseSpider):
     name = "urna"
 
+    def query_sig(self, path, force=False):
+        sig_path = os.path.splitext(path)[0] + ".sig"
+        if force or not os.path.exists(self.get_local_path(sig_path)):
+            return scrapy.Request(self.get_full_url(sig_path), self.parse_sig, errback=self.errback_sig,
+                dont_filter=True, priority=3)
+
+        return None
+
+    def parse_sig(self, response):
+        self.persist_response(response)
+
+    def errback_sig(self, failure):
+        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+
     def start_requests(self):
         self.load_settings()
         yield from self.query_sections_configs()
@@ -22,6 +36,10 @@ class UrnaSpider(BaseSpider):
 
             filename = f"{state}-p{self.plea:0>6}-cs.json"
             info = FileInfo(filename)
+
+            sig_query = self.query_sig(info.path)
+            if sig_query:
+                 yield sig_query
 
             try:
                 with open(self.get_local_path(info.path), "r") as f:
@@ -49,9 +67,13 @@ class UrnaSpider(BaseSpider):
                 for sec in zon["sec"]:
                     yield (city, zone, sec["ns"].lstrip("0"))
 
-    def query_sections(self, state, data):        
+    def query_sections(self, state, data):
+        size = 0
+        queued = 0
+
         for city, zone, section in self.expand_sections(data):
             filename = f"p{self.plea:0>6}-{state}-m{city:0>5}-z{zone:0>4}-s{section:0>4}-aux.json"
+            size += 1
 
             info = FileInfo(filename)
             try:
@@ -61,8 +83,11 @@ class UrnaSpider(BaseSpider):
                     yield from self.download_ballot_files(state, city, zone, section, data)
             except (FileNotFoundError, json.JSONDecodeError):
                 logging.debug(f"Queueing section file {filename}")
+                queued += 1
                 yield scrapy.Request(self.get_full_url(info.path), self.parse_section, errback=self.errback_section,
                     dont_filter=True, priority=2, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
+
+        logging.info(f"Queued {state} {queued} section files of {size}")
 
     def parse_section(self, response, state, city, zone, section):
         self.persist_response(response)
