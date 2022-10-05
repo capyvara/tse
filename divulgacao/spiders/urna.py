@@ -99,6 +99,9 @@ class UrnaSpider(BaseSpider):
 
     def expand_files(self, data):
         for hash in data["hashes"]:
+            if hash["st"] != "Totalizado":
+                continue
+
             for filename in hash["nmarq"]:
                 yield (hash["hash"], filename)
 
@@ -107,7 +110,7 @@ class UrnaSpider(BaseSpider):
         for hash, filename in self.expand_files(data):
             path = f"{base_path}/{hash}/{filename}"
 
-            if not os.path.exists(path) or data["st"] != "Totalizada":
+            if not os.path.exists(path):
                 logging.debug(f"Queueing ballot file {filename}")
                 yield scrapy.Request(self.get_full_url(path), self.parse_ballot_file, errback=self.errback_ballot_file,
                     dont_filter=True, priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
