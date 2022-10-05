@@ -165,6 +165,8 @@ class DivulgaSpider(BaseSpider):
                     yield cand
 
     def query_pictures(self, data, info):
+        added = 0
+
         for cand in self.expand_candidates(data):
             sqcand = cand["sqcand"]
             filename = f"{sqcand}.jpeg"
@@ -180,10 +182,13 @@ class DivulgaSpider(BaseSpider):
             target_path = self.get_local_path(path)
             if not os.path.exists(target_path):
                 self.pending.add(filename)
-
+                added += 1
                 logging.debug(f"Queueing picture {sqcand}.jpeg")
                 yield scrapy.Request(self.get_full_url(path), self.parse_picture, priority=1,
                     dont_filter=True, cb_kwargs={"filename": filename})
+
+        if added > 0:
+            logging.info(f"Added pictures {added}, total pending {len(self.pending)}")
 
     def parse_picture(self, response, filename):
         self.persist_response(response)
