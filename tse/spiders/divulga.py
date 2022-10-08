@@ -4,7 +4,6 @@ import scrapy
 import logging
 
 from tse.common.index import Index
-from tse.common.fileinfo import FileInfo
 from tse.common.basespider import BaseSpider
 
 class DivulgaSpider(BaseSpider):
