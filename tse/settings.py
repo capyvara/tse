@@ -32,19 +32,19 @@ RETRY_TIMES = 5
 # States to get information from, beware that without "br" some shared files such as config woudn't be downloaded
 STATES = "br ac al am ap ba ce df es go ma mg ms mt pa pb pe pi pr rj rn ro rr rs sc se sp to zz"
 
-DOWNLOAD_PICTURES=True
+DOWNLOAD_PICTURES = True
 
 # Optional regex to filter filenames to narrow scope
 
 # Examples
 # Do not download signature files
-# IGNORE_PATTERN=r"\.sig"
+# IGNORE_PATTERN = r"\.sig"
 
 # Do not download signature nor vatiable files (too many are changed during the appuration process)
-# IGNORE_PATTERN=r"\.sig|\-v.json"
+# IGNORE_PATTERN = r"\.sig|\-v.json"
 
 # On urna download only logs (negative lookbehind)
-# IGNORE_PATTERN=r".*(?<!\.logjez)$"
+# IGNORE_PATTERN = r".*(?<!\.logjez)$"
 
 
 # Sim env
