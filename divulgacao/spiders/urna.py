@@ -1,9 +1,7 @@
 import os
 import json
-import datetime
 import scrapy
 import logging
-import urllib.parse
 
 from divulgacao.common.fileinfo import FileInfo
 from divulgacao.common.basespider import BaseSpider
@@ -108,6 +106,9 @@ class UrnaSpider(BaseSpider):
     def download_ballot_files(self, state, city, zone, section, data):
         base_path = f"arquivo-urna/{self.plea}/dados/{state}/{city:0>5}/{zone:0>4}/{section:0>4}"
         for hash, filename in self.expand_files(data):
+            if self.ignore_pattern and self.ignore_pattern.match(filename):
+                continue
+ 
             path = f"{base_path}/{hash}/{filename}"
 
             if not os.path.exists(self.get_local_path(path)):

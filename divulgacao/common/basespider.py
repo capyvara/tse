@@ -1,4 +1,5 @@
 import os
+import re
 import scrapy
 import logging
 import urllib.parse
@@ -36,6 +37,7 @@ class BaseSpider(scrapy.Spider):
         self.plea = self.settings["PLEA"]
         self.elections = self.settings["ELECTIONS"]
         self.states = self.settings["STATES"].lower().split()
+        self.ignore_pattern = re.compile(self.settings["IGNORE_PATTERN"]) if self.settings["IGNORE_PATTERN"] else None
 
         logging.info(f"Host: {self.host}")
         logging.info(f"Environment: {self.environment}")

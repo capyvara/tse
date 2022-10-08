@@ -1,6 +1,5 @@
 import os
 import json
-import datetime
 import scrapy
 import logging
 
@@ -78,6 +77,9 @@ class DivulgaSpider(BaseSpider):
         for info, filedate in Index.expand(state, data):
             size += 1
 
+            if self.ignore_pattern and self.ignore_pattern.match(info.filename):
+                continue
+
             if info.filename in self.index and filedate <= self.index[info.filename]:
                 continue
 
@@ -105,7 +107,7 @@ class DivulgaSpider(BaseSpider):
         self.index[info.filename] = filedate
         self.pending.discard(info.filename)
 
-        if info.type == "f" and info.ext == "json":
+        if info.type == "f" and info.ext == "json" and info.settings["DOWNLOAD_PICTURES"]:
             try:
                 data = json.loads(response.body)
                 yield from self.query_pictures(data, info)
