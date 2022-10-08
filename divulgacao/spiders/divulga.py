@@ -10,6 +10,26 @@ from divulgacao.common.basespider import BaseSpider
 
 class DivulgaSpider(BaseSpider):
     name = "divulga"
+
+    def validate_index_entry(self, filename, filedate):
+        info = FileInfo(filename)
+        target_path = self.get_local_path(info.path)
+        if not os.path.exists(target_path):
+            logging.debug(f"Target path not found, skipping index {info.filename}")
+            return False
+
+        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(target_path))
+        if filedate != modified_time:
+            logging.debug(f"Index date mismatch, skipping index {info.filename} {modified_time} > {filedate}")
+            return False
+
+        return True
+
+    def validate_index(self):
+        old_size = len(self.index)
+        self.index = {k: v for k, v in self.index.items() if self.validate_index_entry(k, v)}
+        if len(self.index) != old_size:
+            logging.info(f"Removed {old_size - len(self.index)} invalid index entries")
     
     def load_states_index(self, election):
         base_path = self.get_local_path(f"{election}/config")
@@ -19,28 +39,14 @@ class DivulgaSpider(BaseSpider):
                 continue
 
             size = 0
-            added = 0
 
             with open(file_path, "r") as f:
                 data = json.load(f)
                 for info, filedate in FileInfo.expand_index(state, data):
                     size += 1
-
-                    target_path = self.get_local_path(info.path)
-                    
-                    if not os.path.exists(target_path):
-                        logging.debug(f"Target path not found, skipping index {info.filename}")
-                        continue
-                    
-                    modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(target_path))
-                    if filedate != modified_time:
-                        logging.debug(f"Index date mismatch, skipping index {info.filename} {modified_time} > {filedate}")
-                        continue
-
                     self.index[info.filename] = filedate
-                    added += 1
     
-            logging.info(f"Loaded index from: {election}-{state}, size {size}, added {added}")
+            logging.info(f"Loaded index from: {election}-{state}, size {size}")
 
     def json_serialize(self, obj):
         if isinstance(obj, (datetime.datetime, datetime.date)):
@@ -62,13 +68,14 @@ class DivulgaSpider(BaseSpider):
             with open(index_path, "r") as f:
                 self.index = json.load(f, object_hook=self.json_parse)
 
-            logging.info(f"Index {index_path} loaded")
+            logging.info(f"Loaded index from {index_path}")
         except:
             logging.info("No valid saved index found, loading from downloaded index files")
             self.index = {}
             for election in self.elections:
                 self.load_states_index(election)
 
+        self.validate_index()
         logging.info(f"Index size {len(self.index)}")
 
     def save_index(self):
