@@ -58,23 +58,3 @@ class FileInfo:
             return
 
         raise ValueError("Filename format not recognized")
-
-    # TODO: Move to divulga?
-    def expand_index(state, data):
-        for entry in data["arq"]:
-            filename = entry["nm"]
-            filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
-
-            if filename == "ele-c.json":
-                continue
-
-            info = FileInfo(filename)
-            if (info.prefix == "cert" or info.prefix == "mun") and state != "br":
-                continue
-            
-            if info.state and state != info.state:
-                continue
-
-            yield info, filedate
-
-    # TODO: Centralize paths here

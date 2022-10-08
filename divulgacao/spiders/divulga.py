@@ -3,86 +3,40 @@ import json
 import datetime
 import scrapy
 import logging
-import urllib.parse
 
+from divulgacao.common.index import Index
 from divulgacao.common.fileinfo import FileInfo
 from divulgacao.common.basespider import BaseSpider
 
 class DivulgaSpider(BaseSpider):
     name = "divulga"
-
-    def validate_index_entry(self, filename, filedate):
-        info = FileInfo(filename)
-        target_path = self.get_local_path(info.path)
-        if not os.path.exists(target_path):
-            logging.debug(f"Target path not found, skipping index {info.filename}")
-            return False
-
-        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(target_path))
-        if filedate != modified_time:
-            logging.debug(f"Index date mismatch, skipping index {info.filename} {modified_time} > {filedate}")
-            return False
-
-        return True
-
-    def validate_index(self):
-        old_size = len(self.index)
-        self.index = {k: v for k, v in self.index.items() if self.validate_index_entry(k, v)}
-        if len(self.index) != old_size:
-            logging.info(f"Removed {old_size - len(self.index)} invalid index entries")
     
-    def load_states_index(self, election):
+    def append_states_index(self, election):
         base_path = self.get_local_path(f"{election}/config")
         for state in self.states:
             file_path = f"{base_path}/{state}/{state}-e{election:0>6}-i.json"
             if not os.path.exists(file_path):
                 continue
-
-            size = 0
-
-            with open(file_path, "r") as f:
-                data = json.load(f)
-                for info, filedate in FileInfo.expand_index(state, data):
-                    size += 1
-                    self.index[info.filename] = filedate
     
-            logging.info(f"Loaded index from: {election}-{state}, size {size}")
-
-    def json_serialize(self, obj):
-        if isinstance(obj, (datetime.datetime, datetime.date)):
-            return obj.strftime("%d/%m/%Y %H:%M:%S")
-
-        raise TypeError("Type %s not serializable" % type(obj))            
-
-    def json_parse(self, json_dict):
-        for (key, value) in json_dict.items():
-            try:
-                json_dict[key] = datetime.datetime.strptime(value, "%d/%m/%Y %H:%M:%S")
-            except:
-                pass
-        return json_dict
+            self.index.append_state(state, file_path)
 
     def load_index(self):
+        self.index = Index()
         index_path = self.get_local_path("index.json", no_cycle=True)
         try:
-            with open(index_path, "r") as f:
-                self.index = json.load(f, object_hook=self.json_parse)
-
-            logging.info(f"Loaded index from {index_path}")
-        except:
+            self.index.load(index_path)
+        except Exception as e:
             logging.info("No valid saved index found, loading from downloaded index files")
-            self.index = {}
             for election in self.elections:
-                self.load_states_index(election)
+                self.append_states_index(election)
 
-        self.validate_index()
+        self.index.validate(self.get_local_path(""))
+
         logging.info(f"Index size {len(self.index)}")
 
     def save_index(self):
         index_path = self.get_local_path(f"index.json", no_cycle=True)
-        os.makedirs(os.path.dirname(index_path), exist_ok=True)
-        with open(index_path, "w") as f:
-            json.dump(self.index, f, default=self.json_serialize)
+        self.index.save(index_path)
 
     def start_requests(self):
         self.load_settings()
@@ -117,16 +71,14 @@ class DivulgaSpider(BaseSpider):
     def parse_index(self, response, election, state):
         self.persist_response(response)
 
-        current_index = self.index
-
         size = 0
         added = 0
 
         data = json.loads(response.body)
-        for info, filedate in FileInfo.expand_index(state, data):
+        for info, filedate in Index.expand(state, data):
             size += 1
 
-            if info.filename in current_index and filedate <= current_index[info.filename]:
+            if info.filename in self.index and filedate <= self.index[info.filename]:
                 continue
 
             if info.filename in self.pending:
@@ -138,7 +90,7 @@ class DivulgaSpider(BaseSpider):
 
             priority = 0 if info.type == "v" else 2
 
-            logging.debug(f"Queueing file {info.filename} [{current_index.get(info.filename)} > {filedate}]")
+            logging.debug(f"Queueing file {info.filename} [{self.index.get(info.filename)} > {filedate}]")
 
             yield scrapy.Request(self.get_full_url(info.path), self.parse_file, errback=self.errback_file, priority=priority,
                 dont_filter=True, cb_kwargs={"info": info, "filedate": filedate})
