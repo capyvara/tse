@@ -3,7 +3,7 @@ import json
 import datetime
 import logging
 
-from divulgacao.common.fileinfo import FileInfo
+from tse.common.fileinfo import FileInfo
 
 class Index():
     def expand(state, data):

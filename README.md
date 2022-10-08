@@ -21,4 +21,4 @@ Please read their policy and docs before using the tool.
 - Run `scrapy crawl urna` to download all the original files transmitted from the ballots (ballot bulletin, logs, etc), 
   - Beware that it's above 472k electoral sections with 6 files and about 200kb per section, totalling 2.8 million files 90gb
 
-- Edit `divulgacao/setting.py` to customize paths, network usage, narrow down filters, etc.
+- Edit `tse/setting.py` to customize paths, network usage, narrow down filters, etc.

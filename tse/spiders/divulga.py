@@ -3,9 +3,9 @@ import json
 import scrapy
 import logging
 
-from divulgacao.common.index import Index
-from divulgacao.common.fileinfo import FileInfo
-from divulgacao.common.basespider import BaseSpider
+from tse.common.index import Index
+from tse.common.fileinfo import FileInfo
+from tse.common.basespider import BaseSpider
 
 class DivulgaSpider(BaseSpider):
     name = "divulga"

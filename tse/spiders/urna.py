@@ -3,8 +3,8 @@ import json
 import scrapy
 import logging
 
-from divulgacao.common.fileinfo import FileInfo
-from divulgacao.common.basespider import BaseSpider
+from tse.common.fileinfo import FileInfo
+from tse.common.basespider import BaseSpider
 
 class UrnaSpider(BaseSpider):
     name = "urna"

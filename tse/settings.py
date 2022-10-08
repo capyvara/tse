@@ -1,4 +1,4 @@
-# Scrapy settings for divulgacao project
+# Scrapy settings for tse project
 #
 # For simplicity, this file contains only settings considered important or
 # commonly used. You can find more settings consulting the documentation:
@@ -7,12 +7,12 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
-BOT_NAME = "divulgacao"
+BOT_NAME = "tse"
 
 LOG_LEVEL = "INFO"
 
-SPIDER_MODULES = ["divulgacao.spiders"]
-NEWSPIDER_MODULE = "divulgacao.spiders"
+SPIDER_MODULES = ["tse.spiders"]
+NEWSPIDER_MODULE = "tse.spiders"
 
 # Not needed for this scrap
 HTTPCACHE_ENABLED = False

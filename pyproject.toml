@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "divulgacao"
+name = "tse"
 version = "0.1.0"
 description = ""
 authors = ["Marcelo Oliveira <capyvara@gmail.com>"]
@@ -8,6 +8,7 @@ authors = ["Marcelo Oliveira <capyvara@gmail.com>"]
 python = "^3.6"
 Scrapy = "^2.6.3"
 pyOpenSSL = "^22.1.0"
+ckanapi = "^4.7"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
