@@ -17,6 +17,7 @@ NEWSPIDER_MODULE = "tse.spiders"
 # Not needed for this scrap
 HTTPCACHE_ENABLED = False
 ROBOTSTXT_OBEY = False
+COOKIES_ENABLED = False
 
 # Where to put downloaded files
 FILES_STORE = "data/download"
