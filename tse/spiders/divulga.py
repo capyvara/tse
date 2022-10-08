@@ -106,7 +106,7 @@ class DivulgaSpider(BaseSpider):
         self.index[info.filename] = filedate
         self.pending.discard(info.filename)
 
-        if info.type == "f" and info.ext == "json" and info.settings["DOWNLOAD_PICTURES"]:
+        if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
             try:
                 data = json.loads(response.body)
                 yield from self.query_pictures(data, info)
