@@ -77,10 +77,10 @@ class UrnaSpider(BaseSpider):
                     logging.debug(f"Reading section file {filename}")
 
                     aux_data = json.load(f)
-                    if aux_data["st"] == "Não instalada":
+                    if aux_data["st"] in ["Não instalada"]:
                         continue
 
-                    if not aux_data["st"] in ["Totalizada", "Recebida"]:
+                    if not aux_data["st"] in ["Totalizada", "Recebida", "Anulada"]:
                         raise ValueError("Section not totalled up yet")
 
                     yield from self.download_ballot_files(state, city, zone, section, aux_data)
@@ -101,7 +101,7 @@ class UrnaSpider(BaseSpider):
 
     def expand_files(self, data):
         for hash in data["hashes"]:
-            if not hash["st"] in ["Totalizado", "Recebido"]:
+            if not hash["st"] in ["Totalizado", "Recebido", "Excluído"]:
                 continue
 
             for filename in hash["nmarq"]:
