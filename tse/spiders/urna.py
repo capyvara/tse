@@ -42,8 +42,7 @@ class UrnaSpider(BaseSpider):
             try:
                 with open(self.get_local_path(info.path), "r") as f:
                     logging.info(f"Reading sections config file {filename}")
-                    data = json.load(f)
-                    yield from self.query_sections(state, data)
+                    yield from self.query_sections(state, json.load(f))
             except (FileNotFoundError, json.JSONDecodeError):
                 logging.info(f"Queueing sections config file {filename}")
                 yield scrapy.Request(self.get_full_url(info.path), self.parse_section_config, errback=self.errback_section_config,
@@ -51,8 +50,7 @@ class UrnaSpider(BaseSpider):
 
     def parse_section_config(self, response, state):
         self.persist_response(response)
-        data = json.loads(response.body)
-        yield from self.query_sections(state, data)
+        yield from self.query_sections(state, json.loads(response.body))
 
     def errback_section_config(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
@@ -77,9 +75,16 @@ class UrnaSpider(BaseSpider):
             try:
                 with open(self.get_local_path(info.path), "r") as f:
                     logging.debug(f"Reading section file {filename}")
-                    data = json.load(f)
-                    yield from self.download_ballot_files(state, city, zone, section, data)
-            except (FileNotFoundError, json.JSONDecodeError):
+
+                    aux_data = json.load(f)
+                    if aux_data["st"] == "Não instalada":
+                        continue
+
+                    if not aux_data["st"] in ["Totalizada", "Recebida"]:
+                        raise ValueError("Section not totalled up yet")
+
+                    yield from self.download_ballot_files(state, city, zone, section, aux_data)
+            except (FileNotFoundError, ValueError, json.JSONDecodeError):
                 logging.debug(f"Queueing section file {filename}")
                 queued += 1
                 yield scrapy.Request(self.get_full_url(info.path), self.parse_section, errback=self.errback_section,
@@ -89,15 +94,14 @@ class UrnaSpider(BaseSpider):
 
     def parse_section(self, response, state, city, zone, section):
         self.persist_response(response)
-        data = json.loads(response.body)
-        yield from self.download_ballot_files(state, city, zone, section, data)
+        yield from self.download_ballot_files(state, city, zone, section, json.loads(response.body))
 
     def errback_section(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
     def expand_files(self, data):
         for hash in data["hashes"]:
-            if hash["st"] != "Totalizado":
+            if not hash["st"] in ["Totalizado", "Recebido"]:
                 continue
 
             for filename in hash["nmarq"]:
