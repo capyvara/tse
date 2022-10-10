@@ -38,8 +38,14 @@ class Index():
     def __contains__(self, key):
         return key in self.index
 
+    def add(self, key, value):
+        self.index[key] = value
+
     def get(self, key):
         return self.index.get(key)
+
+    def discard(self, key):
+        return self.index.pop(key, None)
 
     def load(self, path):
         with open(path, "r") as f:

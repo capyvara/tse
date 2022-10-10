@@ -18,6 +18,7 @@ NEWSPIDER_MODULE = "tse.spiders"
 HTTPCACHE_ENABLED = False
 ROBOTSTXT_OBEY = False
 COOKIES_ENABLED = False
+REFERER_ENABLED = False
 
 # Where to put downloaded files
 FILES_STORE = "data/download"

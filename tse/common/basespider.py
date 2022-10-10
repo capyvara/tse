@@ -9,6 +9,10 @@ import urllib.parse
 class BaseSpider(scrapy.Spider):
     name = "base"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._version_path_cache = {}
+
     def get_local_path(self, path, no_cycle=False):
         if no_cycle:
             return os.path.join(self.settings["FILES_STORE"], self.environment, path)
@@ -21,30 +25,35 @@ class BaseSpider(scrapy.Spider):
 
         return os.path.join(f"{self.host}/{self.environment}/{self.cycle}", path)
 
-    _path_ver_regex = re.compile(r"(?P<base_path>.*?)(?:_(?P<ver>\d{1,4}})?)?\.(?P<ext>\w+)")
+    def _get_version_path(self, path):
+        dirname, basename = os.path.split(path)
+        ver_dir = os.path.join(dirname, ".ver")
+        ver_path = os.path.join(ver_dir, basename)
 
-    def _get_unused_path(self, path):
-        while os.path.exists(path):
-            result = BaseSpider._path_ver_regex.match(path)
-            if not result:
-                raise ValueError("Unrecognized path format")
+        filename, ext = os.path.splitext(basename)
+        version = self._version_path_cache.get(path, 1)
 
-            version = int(result["ver"]) if result["ver"] != None else 0
+        while True:
+            ver_path = os.path.join(ver_dir, f"{filename}_{version:04}{ext}")
+            if not os.path.exists(ver_path):
+                break
+
+            # File may be removed if identical, so cache up only to latest existing one
+            self._version_path_cache[path] = version
             version += 1
-            path = f"{result['base_path']}_{version:04}.{result['ext']}"
-
-        return path
+    
+        return ver_path
 
     def persist_response(self, response, filedate=None):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
         target_path = os.path.join(self.settings["FILES_STORE"], url_path)
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-        backup_path = None
+        version_path = None
         
         if os.path.exists(target_path) and self.keep_old_versions:
-            backup_path = self._get_unused_path(target_path)
-            os.rename(target_path, backup_path)
+            version_path = self._get_version_path(target_path)
+            os.renames(target_path, version_path)
             
         with open(target_path, "wb") as f:
             f.write(response.body)
@@ -53,9 +62,12 @@ class BaseSpider(scrapy.Spider):
             dt_epoch = filedate.timestamp()
             os.utime(target_path, (dt_epoch, dt_epoch))
 
-        if backup_path:
-            if filecmp.cmp(target_path, backup_path, shallow=False):
-                os.remove(backup_path)
+        if version_path:
+            if filecmp.cmp(target_path, version_path, shallow=False):
+                os.remove(version_path)
+                version_dir = os.path.dirname(version_path)
+                if len(os.listdir(version_dir)) == 0:
+                    os.rmdir(version_dir)
 
     def load_settings(self):
         self.host = self.settings["HOST"]
