@@ -25,7 +25,7 @@ class BaseSpider(scrapy.Spider):
 
         return os.path.join(f"{self.host}/{self.environment}/{self.cycle}", path)
 
-    def _get_version_path(self, path):
+    def _get_next_version_path(self, path):
         dirname, basename = os.path.split(path)
         ver_dir = os.path.join(dirname, ".ver")
         ver_path = os.path.join(ver_dir, basename)
@@ -38,7 +38,6 @@ class BaseSpider(scrapy.Spider):
             if not os.path.exists(ver_path):
                 break
 
-            # File may be removed if identical, so cache up only to latest existing one
             self._version_path_cache[path] = version
             version += 1
     
@@ -47,27 +46,32 @@ class BaseSpider(scrapy.Spider):
     def persist_response(self, response, filedate=None):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
         target_path = os.path.join(self.settings["FILES_STORE"], url_path)
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        target_dir = os.path.dirname(target_path)
+        os.makedirs(target_dir, exist_ok=True)
 
-        version_path = None
-        
-        if os.path.exists(target_path) and self.keep_old_versions:
-            version_path = self._get_version_path(target_path)
-            os.renames(target_path, version_path)
-            
-        with open(target_path, "wb") as f:
-            f.write(response.body)
+        if self.keep_old_versions:
+            tmp_path = os.path.join(target_dir, f".tmp_{os.path.basename(target_path)}")
+            try:
+                with open(tmp_path, "wb") as f:
+                    f.write(response.body)
+
+                if os.path.exists(target_path):
+                    if not filecmp.cmp(tmp_path, target_path, shallow=False):
+                        os.renames(target_path, self._get_next_version_path(target_path))
+                    else:
+                        os.remove(target_path)
+
+                os.renames(tmp_path, target_path)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        else:
+            with open(target_dir, "wb") as f:
+                f.write(response.body)
 
         if filedate:
             dt_epoch = filedate.timestamp()
             os.utime(target_path, (dt_epoch, dt_epoch))
-
-        if version_path:
-            if filecmp.cmp(target_path, version_path, shallow=False):
-                os.remove(version_path)
-                version_dir = os.path.dirname(version_path)
-                if len(os.listdir(version_dir)) == 0:
-                    os.rmdir(version_dir)
 
     def load_settings(self):
         self.host = self.settings["HOST"]

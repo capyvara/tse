@@ -1,6 +1,5 @@
 import os
 import json
-from requests import request
 import scrapy
 import logging
 
@@ -26,6 +25,7 @@ class DivulgaSpider(BaseSpider):
 
     def load_index(self):
         self.index = Index()
+
         index_path = self.get_local_path("index.json", no_cycle=True)
         try:
             self.index.load(index_path)
@@ -57,7 +57,6 @@ class DivulgaSpider(BaseSpider):
 
     def closed(self, reason):
         self.save_index()
-        return
 
     def query_common(self):
         yield scrapy.Request(self.get_full_url(f"comum/config/ele-c.json", no_cycle=True), self.parse_config, dont_filter=True)
@@ -125,7 +124,7 @@ class DivulgaSpider(BaseSpider):
         if added > 0 or response.request.meta.get("reindex_count", 0) == 0:
             logging.info(f"Parsed index for {election}-{state}, size {size}, added {added}, total pending {len(self.pending)}")
 
-        if self.continuous:
+        if self.continuous and self.crawler.crawling:
             reindex_request = response.request.copy()
             reindex_request.priority = 1
             reindex_request.meta["depth"] = 0
@@ -143,6 +142,11 @@ class DivulgaSpider(BaseSpider):
         self.persist_response(response, filedate)
         self.index[info.filename] = filedate
         self.pending.discard(info.filename)
+
+        self.index_dirty_count = self.index_dirty_count + 1
+        if self.index_dirty_count % 10 == 0:
+            self.save_index()
+            self.index_dirty_count = 0
 
         if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
             try:

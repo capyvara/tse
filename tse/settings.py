@@ -38,7 +38,7 @@ STATES = "br ac al am ap ba ce df es go ma mg ms mt pa pb pe pi pr rj rn ro rr r
 # Download pictures of the candidates
 DOWNLOAD_PICTURES = True
 
-# Keep backups of files when overwritten
+# Keep backups of files when overwritten (at .ver directories)
 KEEP_OLD_VERSIONS = True
 
 # Optional regex to filter filenames to narrow scope
