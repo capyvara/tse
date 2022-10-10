@@ -43,9 +43,6 @@ class BaseSpider(scrapy.Spider):
         backup_path = None
         
         if os.path.exists(target_path) and self.keep_old_versions:
-            #base_path, ext = os.path.splitext(target_path)
-            #modtime = datetime.datetime.fromtimestamp(os.path.getmtime(target_path))
-            #backup_path = self._get_unused_path(f"{base_path}{modtime.strftime('_%Y%m%dT%H%M%S')}{ext}")
             backup_path = self._get_unused_path(target_path)
             os.rename(target_path, backup_path)
             
