@@ -6,6 +6,12 @@ https://www.tse.jus.br/eleicoes/eleicoes-2022/interessados-na-divulgacao-de-resu
 
 Please read their policy and docs before using the tool.
 
+TSE Docs:
+
+https://www.tse.jus.br/eleicoes/eleicoes-2022/arquivos/interessados
+
+https://www.tse.jus.br/eleicoes/eleicoes-2022/documentacao-tecnica-do-software-da-urna-eletronica
+
 # Prerequisites
 - Python 3.6+
 - Python Poetry: https://python-poetry.org/docs/#installation 
