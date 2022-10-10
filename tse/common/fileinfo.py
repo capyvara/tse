@@ -5,7 +5,7 @@ class FileInfo:
 
     _regex2 = re.compile(r"^p(?P<plea>\d{6})-(?P<state>\w{2})-m(?P<city>\d{5})?-z(?P<zone>\d{4})?-s(?P<section>\d{4})?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)")
 
-    _regex3 = re.compile(r"o(?P<plea>\d{5})-(?P<city>\d{5})(?P<zone>\d{4})(?P<section>\d{4})\.(?P<ext>\w+)")
+    _regex3 = re.compile(r"o|s(?P<plea>\d{5})-(?P<city>\d{5})(?P<zone>\d{4})(?P<section>\d{4})\.(?P<ext>\w+)")
 
     def __init__(self, filename):
         self.filename = filename
