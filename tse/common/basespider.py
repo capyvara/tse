@@ -55,7 +55,7 @@ class BaseSpider(scrapy.Spider):
 
         if backup_path:
             if filecmp.cmp(target_path, backup_path, shallow=False):
-                os.unlink(backup_path)
+                os.remove(backup_path)
 
     def load_settings(self):
         self.host = self.settings["HOST"]
