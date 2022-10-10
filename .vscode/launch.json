@@ -26,9 +26,12 @@
                 "AUTOTHROTTLE_DEBUG=False",
                 "-s", 
                 "SCHEDULER_DEBUG=True",
-                "--loglevel=DEBUG"
+                "--loglevel=DEBUG",
+                "-a",
+                "continuous=True"
             ],
             "console": "integratedTerminal",
+            "env": {"__https_proxy": "localhost:8888"},
             "justMyCode": false
         }
     ]
