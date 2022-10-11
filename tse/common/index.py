@@ -96,7 +96,7 @@ class Index():
                 pass
         return json_dict
 
-    def save(self, path):
+    def save_json(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
-            json.dump(self.index, f, default=self._json_serialize)
+            json.dump(self.index, f, default=self._json_serialize, check_circular=False)

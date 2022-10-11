@@ -18,7 +18,7 @@ class UrnaSpider(BaseSpider):
         return None
 
     def parse_sig(self, response):
-        self.persist_response(response)
+        self.persist_response(response, check_identical=True)
 
     def errback_sig(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
@@ -49,7 +49,7 @@ class UrnaSpider(BaseSpider):
                     dont_filter=True, priority=3, cb_kwargs={"state": state})
 
     def parse_section_config(self, response, state):
-        self.persist_response(response)
+        self.persist_response(response, check_identical=True)
         yield from self.query_sections(state, json.loads(response.body))
 
     def errback_section_config(self, failure):
@@ -93,7 +93,7 @@ class UrnaSpider(BaseSpider):
         logging.info(f"Queued {state} {queued} section files of {size}")
 
     def parse_section(self, response, state, city, zone, section):
-        self.persist_response(response)
+        self.persist_response(response, check_identical=True)
         yield from self.download_ballot_files(state, city, zone, section, json.loads(response.body))
 
     def errback_section(self, failure):

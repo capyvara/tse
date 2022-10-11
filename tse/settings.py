@@ -19,6 +19,12 @@ HTTPCACHE_ENABLED = False
 ROBOTSTXT_OBEY = False
 COOKIES_ENABLED = False
 REFERER_ENABLED = False
+URLLENGTH_LIMIT = None
+SPIDER_MIDDLEWARES = {
+    'scrapy.spidermiddlewares.offsite.DepthMiddleware': None,
+    'scrapy.spidermiddlewares.offsite.UrlLengthMiddleware': None,
+    'scrapy.spidermiddlewares.offsite.OffsiteMiddleware': None,
+}
 
 # Where to put downloaded files
 FILES_STORE = "data/download"
@@ -27,8 +33,8 @@ FILES_STORE = "data/download"
 CONCURRENT_REQUESTS = 200
 CONCURRENT_REQUESTS_PER_DOMAIN = 200
 AUTOTHROTTLE_ENABLED = True
-AUTOTHROTTLE_TARGET_CONCURRENCY = 4.0
-AUTOTHROTTLE_START_DELAY = 0.5
+AUTOTHROTTLE_START_DELAY = 0.1
+AUTOTHROTTLE_TARGET_CONCURRENCY = 10.0
 
 RETRY_TIMES = 5
 
@@ -47,7 +53,7 @@ KEEP_OLD_VERSIONS = True
 # Do not download signature files
 # IGNORE_PATTERN = r"\.sig"
 
-# Do not download signature nor vatiable files (too many are changed during the appuration process)
+# Do not download signature nor variable files (too many are changed during the appuration process)
 # IGNORE_PATTERN = r"\.sig|\-v.json"
 
 # On urna download only logs (negative lookbehind)
@@ -66,9 +72,11 @@ KEEP_OLD_VERSIONS = True
 HOST = "https://resultados.tse.jus.br"
 ENVIRONMENT = "oficial"
 CYCLE = "ele2022"
+
 # 1st round
-PLEA = "406"
-ELECTIONS = ["544", "546", "548"]
+# PLEA = "406"
+# ELECTIONS = ["544", "546", "548"]
+
 # 2nd round
-# PLEA = "407"
-# ELECTIONS = ["545", "547"]
+PLEA = "407"
+ELECTIONS = ["545", "547"]

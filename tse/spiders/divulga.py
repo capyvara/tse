@@ -13,6 +13,7 @@ class DivulgaSpider(BaseSpider):
     def __init__(self, continuous=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.continuous = continuous
+        self.index_dirty_count = 0
     
     def append_states_index(self, election):
         base_path = self.get_local_path(f"{election}/config")
@@ -40,7 +41,7 @@ class DivulgaSpider(BaseSpider):
 
     def save_index(self):
         index_path = self.get_local_path(f"index.json", no_cycle=True)
-        self.index.save(index_path)
+        self.index.save_json(index_path)
 
     def start_requests(self):
         self.load_settings()
@@ -62,7 +63,7 @@ class DivulgaSpider(BaseSpider):
         yield scrapy.Request(self.get_full_url(f"comum/config/ele-c.json", no_cycle=True), self.parse_config, dont_filter=True)
 
     def parse_config(self, response):
-        self.persist_response(response)
+        self.persist_response(response, check_identical=True)
 
         for election in self.elections:
             logging.info(f"Queueing election: {election}")
@@ -78,7 +79,7 @@ class DivulgaSpider(BaseSpider):
                 dont_filter=True, priority=4, cb_kwargs={"election": election, "state":state})
 
     def parse_index(self, response, election, state):
-        self.persist_response(response)
+        self.persist_response(response, check_identical=True)
 
         size = 0
         added = 0
@@ -127,7 +128,6 @@ class DivulgaSpider(BaseSpider):
         if self.continuous and self.crawler.crawling:
             reindex_request = response.request.copy()
             reindex_request.priority = 1
-            reindex_request.meta["depth"] = 0
             reindex_request.meta["download_slot"] = "reindex"
             reindex_request.meta["reindex_count"] = reindex_request.meta.get("reindex_count", 0) + 1
             self.crawler.engine.downloader.slots.get("reindex").delay = 1 # Autothrottle keeps overriding 
@@ -144,7 +144,7 @@ class DivulgaSpider(BaseSpider):
         self.pending.discard(info.filename)
 
         self.index_dirty_count = self.index_dirty_count + 1
-        if self.index_dirty_count % 10 == 0:
+        if self.index_dirty_count % 1000 == 0:
             self.save_index()
             self.index_dirty_count = 0
 

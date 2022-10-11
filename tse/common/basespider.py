@@ -25,29 +25,64 @@ class BaseSpider(scrapy.Spider):
 
         return os.path.join(f"{self.host}/{self.environment}/{self.cycle}", path)
 
+    def _get_version_path_cache(self, dirname):
+        if dirname in self._version_path_cache:
+            return self._version_path_cache[dirname]
+
+        cache = {}
+
+        ver_dir = os.path.join(dirname, ".ver")
+        if not os.path.exists(ver_dir):
+            self._version_path_cache[dirname] = cache
+            return cache
+
+        with os.scandir(ver_dir) as it:
+            for entry in it:
+                if not entry.is_file() or entry.name.startswith('.'): 
+                    continue
+                
+                entry_root, entry_ext = os.path.splitext(entry.name)
+
+                try:
+                    idx = entry_root.rindex("_")
+                    entry_version = int(entry_root[idx + 1:])
+                    filename = f"{entry_root[:idx]}{entry_ext}"
+                    max_version = cache.get(filename, 0)
+                    cache[filename] = max(entry_version, max_version)
+                except ValueError as e:
+                    logging.debug(f"Error: skipping version from filename {entry.name}")
+                    continue
+
+        self._version_path_cache[dirname] = cache
+        return cache
+
     def _get_next_version_path(self, path):
         dirname, basename = os.path.split(path)
+        cache = self._get_version_path_cache(dirname)
+
         ver_dir = os.path.join(dirname, ".ver")
         ver_path = os.path.join(ver_dir, basename)
 
-        filename, ext = os.path.splitext(basename)
-        version = self._version_path_cache.get(path, 1)
+        root, ext = os.path.splitext(basename)
+        version = cache.get(basename, 1)
 
         while True:
-            ver_path = os.path.join(ver_dir, f"{filename}_{version:04}{ext}")
+            ver_path = os.path.join(ver_dir, f"{root}_{version:04}{ext}")
             if not os.path.exists(ver_path):
                 break
 
-            self._version_path_cache[path] = version
+            cache[basename] = version
             version += 1
     
         return ver_path
 
-    def persist_response(self, response, filedate=None):
+    def persist_response(self, response, filedate=None, check_identical=False):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
         target_path = os.path.join(self.settings["FILES_STORE"], url_path)
         target_dir = os.path.dirname(target_path)
         os.makedirs(target_dir, exist_ok=True)
+
+        # TODO: Select patterns to keep old versions
 
         if self.keep_old_versions:
             tmp_path = os.path.join(target_dir, f".tmp_{os.path.basename(target_path)}")
@@ -56,10 +91,10 @@ class BaseSpider(scrapy.Spider):
                     f.write(response.body)
 
                 if os.path.exists(target_path):
-                    if not filecmp.cmp(tmp_path, target_path, shallow=False):
-                        os.renames(target_path, self._get_next_version_path(target_path))
-                    else:
+                    if check_identical and filecmp.cmp(tmp_path, target_path, shallow=False):
                         os.remove(target_path)
+                    else:
+                        os.renames(target_path, self._get_next_version_path(target_path))
 
                 os.renames(tmp_path, target_path)
             finally:
