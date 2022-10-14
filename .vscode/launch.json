@@ -11,6 +11,7 @@
             "program": "${file}",
             "cwd": "${workspaceRoot}",
             "console": "integratedTerminal",
+            "args": "pack data/download/oficial/ele2022/[0-9]*/** --remove",
             "justMyCode": false
         },
         {
