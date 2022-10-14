@@ -30,16 +30,16 @@ def pack(ver_dir, files):
     if len(zippable_files) == 0:
         return
 
-    backup_path = os.path.join(ver_dir, ".bpk_pack.zip")
+    backup_path = os.path.join(ver_dir, ".bpk__pack.zip")
     if os.path.exists(backup_path):
         os.remove(backup_path)
     
-    zip_path = os.path.join(ver_dir, "pack.zip")
+    zip_path = os.path.join(ver_dir, "_pack.zip")
     if os.path.exists(zip_path):
         shutil.copyfile(zip_path, backup_path)
 
     try:
-        print(f"    pack.zip")
+        print(f"    _pack.zip")
         with zipfile.ZipFile(zip_path, "a", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zip:
             zip_files = set(zip_root_files(zip))
             
