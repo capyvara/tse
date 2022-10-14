@@ -1,8 +1,10 @@
+import argparse
 import os
 import shutil
-import argparse
 import zipfile
+
 from zipfile_remove import *
+
 
 def dir_path(string):
     if os.path.isdir(string):
