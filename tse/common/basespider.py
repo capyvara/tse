@@ -1,10 +1,12 @@
+import filecmp
+import logging
 import os
 import re
-import scrapy
-import logging
-import filecmp
-import zipfile
 import urllib.parse
+import zipfile
+
+import scrapy
+
 
 class BaseSpider(scrapy.Spider):
     name = "base"

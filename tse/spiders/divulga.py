@@ -1,11 +1,13 @@
-import os
 import json
-import scrapy
 import logging
+import os
 
-from tse.common.index import Index
-from tse.common.basespider import BaseSpider
+import scrapy
 from scrapy.core.downloader import Slot
+
+from tse.common.basespider import BaseSpider
+from tse.common.index import Index
+
 
 class DivulgaSpider(BaseSpider):
     name = "divulga"

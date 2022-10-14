@@ -1,7 +1,8 @@
 # https://stackoverflow.com/a/73611496
 
-from zipfile import ZipFile, ZipInfo
 from operator import attrgetter
+from zipfile import ZipFile, ZipInfo
+
 
 def zipfile_remove(self, member):
     """Remove a file from the archive. The archive must be open with mode 'a'"""

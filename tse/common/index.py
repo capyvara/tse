@@ -1,9 +1,10 @@
-import os
-import json
 import datetime
+import json
 import logging
+import os
 
 from tse.common.fileinfo import FileInfo
+
 
 class Index():
     def expand(state, data):

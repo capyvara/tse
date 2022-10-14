@@ -1,10 +1,12 @@
-import os
 import json
-import scrapy
 import logging
+import os
 
-from tse.common.fileinfo import FileInfo
+import scrapy
+
 from tse.common.basespider import BaseSpider
+from tse.common.fileinfo import FileInfo
+
 
 class UrnaSpider(BaseSpider):
     name = "urna"

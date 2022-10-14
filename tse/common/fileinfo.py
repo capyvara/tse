@@ -1,5 +1,6 @@
 import re
 
+
 class FileInfo:
     _regex1 = re.compile(r"^(?P<prefix>cert|mun)?(?P<state>\w{2})?(?P<city>\d{5})?(?:-?p(?P<plea>\d{6}))?(?:-c(?P<cand>\d{4}))?(?:-e(?P<election>\d{6}))?(?:-(?P<ver>\d{3}))?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)")
 
