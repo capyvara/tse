@@ -17,7 +17,7 @@ def getargs():
     subparsers = parser.add_subparsers(help="Command", dest="command", required=True)
     pack = subparsers.add_parser("pack", help="Packs the files inside '.ver' directories in a single zip per dir")
     pack.add_argument("paths", type=dir_path, nargs='+', help="Paths to scan for version folders (ex: data/download/oficial/ele2022/[0-9]*/**)")
-    pack.add_argument("--remove", action=argparse.BooleanOptionalAction, help="Delete files after they are packed")
+    pack.add_argument("--keep", action="store_true", help="Keep original files after they are packed (copy, not move)")
     return parser.parse_args()
 
 def zip_root_files(zip):
@@ -59,7 +59,7 @@ def pack(ver_dir, files):
         if os.path.exists(backup_path):
             os.remove(backup_path)
 
-    if args.remove:
+    if not args.keep:
         for file in zippable_files:
             print(f"    - {file}")
             os.remove(os.path.join(ver_dir, file))
