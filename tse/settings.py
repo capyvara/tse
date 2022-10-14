@@ -29,9 +29,12 @@ SPIDER_MIDDLEWARES = {
 # Where to put downloaded files
 FILES_STORE = "data/download"
 
-# How aggressive should the scrapping be done, watch out to not flood the server
+# Autothrottle will handle the actual concurrency
+# When using continuous mode, the re-indexing queries constantly occupies at least num_elections * num_states slots
 CONCURRENT_REQUESTS = 200
 CONCURRENT_REQUESTS_PER_DOMAIN = 200
+
+# How aggressive should the scrapping be done, watch out to not flood the server
 AUTOTHROTTLE_ENABLED = True
 AUTOTHROTTLE_START_DELAY = 0.1
 AUTOTHROTTLE_TARGET_CONCURRENCY = 10.0

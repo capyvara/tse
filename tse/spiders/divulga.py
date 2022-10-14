@@ -3,14 +3,20 @@ import logging
 import os
 
 import scrapy
-from scrapy.core.downloader import Slot
 
 from tse.common.basespider import BaseSpider
 from tse.common.index import Index
+from tse.middlewares import defer_request
 
 
 class DivulgaSpider(BaseSpider):
     name = "divulga"
+
+    custom_settings = {
+        "DOWNLOADER_MIDDLEWARES": {
+           'tse.middlewares.DeferMiddleware': 543,
+        }
+    }
 
     def __init__(self, continuous=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -50,11 +56,11 @@ class DivulgaSpider(BaseSpider):
         self.load_index()        
         self.pending = Index()
 
-        if self.continuous:
-            self.crawler.engine.downloader.slots["reindex"] = Slot(
-                concurrency=1, 
-                delay=1,
-                randomize_delay=False)
+        # if self.continuous:
+        #     self.crawler.engine.downloader.slots["reindex"] = Slot(
+        #         concurrency=1, 
+        #         delay=1,
+        #         randomize_delay=False)
 
         yield from self.query_common()
 
@@ -128,11 +134,9 @@ class DivulgaSpider(BaseSpider):
             logging.info(f"Parsed index for {election}-{state}, size {size}, added {added}, total pending {len(self.pending)}")
 
         if self.continuous and self.crawler.crawling:
-            reindex_request = response.request.copy()
+            reindex_request = defer_request(30.0, response.request)
             reindex_request.priority = 1
-            reindex_request.meta["download_slot"] = "reindex"
             reindex_request.meta["reindex_count"] = reindex_request.meta.get("reindex_count", 0) + 1
-            self.crawler.engine.downloader.slots.get("reindex").delay = 1 # Autothrottle keeps overriding 
             logging.debug(f"Queueing re-indexing of {election}-{state}, count: {reindex_request.meta['reindex_count']}")
             yield reindex_request
 

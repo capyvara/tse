@@ -24,7 +24,7 @@
                 "runspider",
                 "${file}",
                 "-s",
-                "AUTOTHROTTLE_DEBUG=False",
+                "AUTOTHROTTLE_DEBUG=True",
                 "-s", 
                 "SCHEDULER_DEBUG=True",
                 "--loglevel=DEBUG",
