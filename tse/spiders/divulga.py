@@ -157,7 +157,7 @@ class DivulgaSpider(BaseSpider):
 
     def errback_file(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
-        self.pending.discard(failure.request.cb_kwargs["info"].filename)
+        self.pending.pop(failure.request.cb_kwargs["info"].filename, None)
 
     def expand_candidates(self, data):
         for agr in data["carg"]["agr"]:
