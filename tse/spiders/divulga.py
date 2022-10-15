@@ -21,7 +21,6 @@ class DivulgaSpider(BaseSpider):
     def __init__(self, continuous=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.continuous = continuous
-        self.index_dirty_count = 0
     
     def append_states_index(self, election):
         base_path = self.get_local_path(f"{election}/config")
@@ -33,39 +32,38 @@ class DivulgaSpider(BaseSpider):
             self.index.append_state(state, file_path)
 
     def load_index(self):
-        self.index = Index()
+        self.index = Index(self.get_local_path("index.db", no_cycle=True))
 
-        index_path = self.get_local_path("index.json", no_cycle=True)
-        try:
-            self.index.load(index_path)
-        except Exception as e:
-            logging.info("No valid saved index found, loading from downloaded index files")
-            for election in self.elections:
-                self.append_states_index(election)
+        base_local_path = self.get_local_path("")
+        if len(self.index) == 0:
+            logging.info("Empty index found, loading from downloaded index files")
 
-        self.index.validate(self.get_local_path(""))
+            with os.scandir(base_local_path) as it:
+                for entry in it:
+                    if entry.is_file() or entry.name.startswith('.'): 
+                        continue
+                    try:
+                        election = int(entry.name)
+                        self.append_states_index(str(election))
+                    except ValueError:
+                        pass
+                    
+        self.index.validate(base_local_path)
 
         logging.info(f"Index size {len(self.index)}")
-
-    def save_index(self):
-        index_path = self.get_local_path(f"index.json", no_cycle=True)
-        self.index.save_json(index_path)
 
     def start_requests(self):
         self.load_settings()
         self.load_index()        
-        self.pending = Index()
-
-        # if self.continuous:
-        #     self.crawler.engine.downloader.slots["reindex"] = Slot(
-        #         concurrency=1, 
-        #         delay=1,
-        #         randomize_delay=False)
+        self.pending = dict()
 
         yield from self.query_common()
 
     def closed(self, reason):
-        self.save_index()
+        if self.settings["INDEX_SAVE_JSON"]:
+            self.index.save_json(self.get_local_path(f"index.json", no_cycle=True))
+
+        self.index.close()
 
     def query_common(self):
         yield scrapy.Request(self.get_full_url(f"comum/config/ele-c.json", no_cycle=True), self.parse_config, dont_filter=True)
@@ -147,12 +145,7 @@ class DivulgaSpider(BaseSpider):
         filedate = self.pending[info.filename]
         self.persist_response(response, filedate)
         self.index[info.filename] = filedate
-        self.pending.discard(info.filename)
-
-        self.index_dirty_count = self.index_dirty_count + 1
-        if self.index_dirty_count % 1000 == 0:
-            self.save_index()
-            self.index_dirty_count = 0
+        self.pending.pop(info.filename, None)
 
         if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
             try:
@@ -200,4 +193,4 @@ class DivulgaSpider(BaseSpider):
 
     def parse_picture(self, response, filename):
         self.persist_response(response)
-        self.pending.discard(filename)
+        self.pending.pop(filename, None)

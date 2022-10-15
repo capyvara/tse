@@ -29,6 +29,9 @@ SPIDER_MIDDLEWARES = {
 # Where to put downloaded files
 FILES_STORE = "data/download"
 
+# True to save a .json copy of of the index
+INDEX_SAVE_JSON=False
+
 # Autothrottle will handle the actual concurrency
 # When using continuous mode, the re-indexing queries constantly occupies at least num_elections * num_states slots
 CONCURRENT_REQUESTS = 200

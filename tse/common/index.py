@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import sqlite3
 
 from tse.common.fileinfo import FileInfo
 
@@ -24,49 +25,102 @@ class Index():
 
             yield info, filedate
 
-    def __init__(self):
-        self.index = dict()
+    def __init__(self, persist_path=None):
+        self.con = sqlite3.connect(persist_path if persist_path else ":memory:", 
+            detect_types=sqlite3.PARSE_DECLTYPES)
+
+        with self.con:
+            self.con.execute((
+                "CREATE TABLE IF NOT EXISTS \"fileindex\" ("
+                "  filename TEXT NOT NULL UNIQUE,"
+                "  filedate TIMESTAMP,"
+                "  PRIMARY KEY(filename)"
+                ") WITHOUT ROWID;"
+            ))
+
+        if persist_path:
+            logging.info(f"Index persist path: {persist_path}")
+
+    def close(self):
+        if self.con:
+            self.con.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return
 
     def __getitem__(self, key):
-        return self.index[key]
+        row = self.con.execute("SELECT filedate FROM fileindex WHERE filename=:filename", {"filename": key}).fetchone()
+        if not row:
+            raise KeyError(key)
+        
+        return row[0]
 
     def __len__(self):
-        return len(self.index)
+        row = self.con.execute("SELECT COUNT(*) FROM fileindex").fetchone()
+        return row[0]
 
     def __setitem__(self, key, value):
-        self.index[key] = value
+        with self.con:
+            self.con.execute(("INSERT INTO fileindex VALUES (:filename, :filedate) "
+                "ON CONFLICT(filename) DO UPDATE SET filedate=:filedate WHERE filename=:filename"), 
+                    {"filename": key , "filedate": value})
 
     def __contains__(self, key):
-        return key in self.index
+        row = self.con.execute("SELECT COUNT(*) FROM fileindex WHERE filename=:filename", {"filename": key}).fetchone()
+        return row and row[0] != 0
+
+    def _upsert_from_iterator(self, iterator):
+        with self.con:
+            data = ({ "filename": k, "filedate": v } for k, v in iterator)
+            self.con.executemany(("INSERT INTO fileindex VALUES (:filename, :filedate)"
+                "ON CONFLICT(filename) DO UPDATE SET filedate=:filedate WHERE filename=:filename"), data)
+
+    def _delete_from_iterator(self, iterator):
+        with self.con:
+            data = ({ "filename": k } for k in iterator)
+            self.con.executemany("DELETE FROM fileindex WHERE filename=:filename", data)
+
+    def items(self):
+        for row in self.con.execute("SELECT filename, filedate FROM fileindex"):
+            yield row
 
     def add(self, key, value):
-        self.index[key] = value
+        self[key] = value
 
-    def get(self, key):
-        return self.index.get(key)
+    def get(self, key, default = None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def discard(self, key):
-        return self.index.pop(key, None)
+        with self.con:
+            self.con.execute("DELETE FROM fileindex WHERE filename=:filename", {"filename": key})
 
-    def load(self, path):
+    def load_json(self, path):
         with open(path, "r") as f:
-            self.index = json.load(f, object_hook=self._json_parse)
+            self._upsert_from_iterator(json.load(f, object_hook=self._json_parse).items())
 
         logging.info(f"Loaded index from {path}")
 
     def append_state(self, state, path):
         with open(path, "r") as f:
             data = json.load(f)
-            for info, filedate in Index.expand(state, data):
-                self.index[info.filename] = filedate
+            self._upsert_from_iterator([(i.filename, d) for i, d in Index.expand(state, data)])
 
         logging.info(f"Appended index from: {path}")
 
     def validate(self, base_path):
-        old_size = len(self.index)
-        self.index = {k: v for k, v in self.index.items() if self._validate_entry(base_path, k, v)}
-        if len(self.index) != old_size:
-            logging.info(f"Removed {old_size - len(self.index)} invalid index entries")
+        logging.info(f"Validating index...")
+
+        invalid = list([k for k, v in self.items() if not self._validate_entry(base_path, k, v)])
+        if len(invalid) > 0:
+            self._delete_from_iterator(invalid)
+            logging.info(f"Removed {len(invalid)} invalid index entries")
 
     def _validate_entry(self, base_path, filename, filedate):
         info = FileInfo(filename)
@@ -100,4 +154,4 @@ class Index():
     def save_json(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
-            json.dump(self.index, f, default=self._json_serialize, check_circular=False)
+            json.dump(dict(self.items()), f, default=self._json_serialize, check_circular=False)

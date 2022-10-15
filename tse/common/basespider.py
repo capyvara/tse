@@ -62,7 +62,7 @@ class BaseSpider(scrapy.Spider):
                 filename = f"{entry_root[:idx]}{entry_ext}"
                 max_version = cache.get(filename, 0)
                 cache[filename] = max(entry_version, max_version)
-            except ValueError as e:
+            except ValueError:
                 logging.debug(f"Error: skipping version from filename: {entry}")
                 continue
 
