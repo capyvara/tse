@@ -31,11 +31,10 @@ class Index():
 
         with self.con:
             self.con.execute((
-                "CREATE TABLE IF NOT EXISTS \"fileindex\" ("
-                "  filename TEXT NOT NULL UNIQUE,"
-                "  filedate TIMESTAMP,"
-                "  PRIMARY KEY(filename)"
-                ") WITHOUT ROWID;"
+                "CREATE TABLE IF NOT EXISTS \"files\" ("
+                "  filename TEXT PRIMARY KEY,"
+                "  filedate TIMESTAMP"
+                ") WITHOUT ROWID"
             ))
 
         if persist_path:
@@ -53,39 +52,39 @@ class Index():
         return
 
     def __getitem__(self, key):
-        row = self.con.execute("SELECT filedate FROM fileindex WHERE filename=:filename", {"filename": key}).fetchone()
+        row = self.con.execute("SELECT filedate FROM files WHERE filename=:filename", {"filename": key}).fetchone()
         if not row:
             raise KeyError(key)
         
         return row[0]
 
     def __len__(self):
-        row = self.con.execute("SELECT COUNT(*) FROM fileindex").fetchone()
+        row = self.con.execute("SELECT COUNT(*) FROM files").fetchone()
         return row[0]
 
     def __setitem__(self, key, value):
         with self.con:
-            self.con.execute(("INSERT INTO fileindex VALUES (:filename, :filedate) "
+            self.con.execute(("INSERT INTO files VALUES (:filename, :filedate) "
                 "ON CONFLICT(filename) DO UPDATE SET filedate=:filedate WHERE filename=:filename"), 
                     {"filename": key , "filedate": value})
 
     def __contains__(self, key):
-        row = self.con.execute("SELECT COUNT(*) FROM fileindex WHERE filename=:filename", {"filename": key}).fetchone()
+        row = self.con.execute("SELECT COUNT(*) FROM files WHERE filename=:filename", {"filename": key}).fetchone()
         return row and row[0] != 0
 
     def _upsert_from_iterator(self, iterator):
         with self.con:
             data = ({ "filename": k, "filedate": v } for k, v in iterator)
-            self.con.executemany(("INSERT INTO fileindex VALUES (:filename, :filedate)"
+            self.con.executemany(("INSERT INTO files VALUES (:filename, :filedate)"
                 "ON CONFLICT(filename) DO UPDATE SET filedate=:filedate WHERE filename=:filename"), data)
 
     def _delete_from_iterator(self, iterator):
         with self.con:
             data = ({ "filename": k } for k in iterator)
-            self.con.executemany("DELETE FROM fileindex WHERE filename=:filename", data)
+            self.con.executemany("DELETE FROM files WHERE filename=:filename", data)
 
     def items(self):
-        for row in self.con.execute("SELECT filename, filedate FROM fileindex"):
+        for row in self.con.execute("SELECT filename, filedate FROM files"):
             yield row
 
     def add(self, key, value):
@@ -99,7 +98,7 @@ class Index():
 
     def discard(self, key):
         with self.con:
-            self.con.execute("DELETE FROM fileindex WHERE filename=:filename", {"filename": key})
+            self.con.execute("DELETE FROM files WHERE filename=:filename", {"filename": key})
 
     def load_json(self, path):
         with open(path, "r") as f:
