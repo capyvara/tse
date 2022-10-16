@@ -5,6 +5,7 @@ import os
 import scrapy
 
 from tse.common.basespider import BaseSpider
+from tse.common.fileinfo import FileInfo
 from tse.common.index import Index
 from tse.middlewares import defer_request
 
@@ -23,9 +24,9 @@ class DivulgaSpider(BaseSpider):
         self.continuous = continuous
     
     def append_states_index(self, election):
-        base_path = self.get_local_path(f"{election}/config")
+        # TUDO: scandir
         for state in self.states:
-            file_path = f"{base_path}/{state}/{state}-e{election:0>6}-i.json"
+            file_path = self.get_local_path(FileInfo.get_state_index_path(election, state))
             if not os.path.exists(file_path):
                 continue
     
@@ -66,7 +67,7 @@ class DivulgaSpider(BaseSpider):
         self.index.close()
 
     def query_common(self):
-        yield scrapy.Request(self.get_full_url(f"comum/config/ele-c.json", no_cycle=True), self.parse_config, dont_filter=True)
+        yield scrapy.Request(self.get_full_url(FileInfo.get_election_config_path(), no_cycle=True), self.parse_config, dont_filter=True)
 
     def parse_config(self, response):
         self.persist_response(response, check_identical=True)
@@ -76,12 +77,10 @@ class DivulgaSpider(BaseSpider):
             yield from self.generate_requests_index(election)
 
     def generate_requests_index(self, election):
-        config_url = self.get_full_url(f"{election}/config")
-            
         for state in self.states:
-            filename = f"{state}-e{election:0>6}-i.json"
-            logging.debug(f"Queueing index file {filename}")
-            yield scrapy.Request(f"{config_url}/{state}/{filename}", self.parse_index, errback=self.errback_index,
+            logging.debug(f"Queueing index file for {election}-{state}")
+            path = FileInfo.get_state_index_path(election, state)
+            yield scrapy.Request(self.get_full_url(path), self.parse_index, errback=self.errback_index,
                 dont_filter=True, priority=4, cb_kwargs={"election": election, "state":state})
 
     def parse_index(self, response, election, state):
@@ -170,21 +169,19 @@ class DivulgaSpider(BaseSpider):
 
         for cand in self.expand_candidates(data):
             sqcand = cand["sqcand"]
-            filename = f"{sqcand}.jpeg"
-
-            if filename in self.pending:
-                continue
-
             # President is br, others go on state specific directories
             cand_state = info.state if info.cand != "1" else "br"
-
-            path = f"{info.election}/fotos/{cand_state}/{filename}"
+            
+            path = FileInfo.get_picture_path(info.election, cand_state, sqcand)
+            filename = os.path.basename(path)
+            if filename in self.pending:
+                continue
 
             target_path = self.get_local_path(path)
             if not os.path.exists(target_path):
                 self.pending[filename] = None
                 added += 1
-                logging.debug(f"Queueing picture {sqcand}.jpeg")
+                logging.debug(f"Queueing picture {filename}")
                 yield scrapy.Request(self.get_full_url(path), self.parse_picture, priority=1,
                     dont_filter=True, cb_kwargs={"filename": filename})
 

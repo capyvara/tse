@@ -6,7 +6,7 @@ class FileInfo:
 
     _regex2 = re.compile(r"^p(?P<plea>\d{6})-(?P<state>\w{2})-m(?P<city>\d{5})?-z(?P<zone>\d{4})?-s(?P<section>\d{4})?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)")
 
-    _regex3 = re.compile(r"o|s(?P<plea>\d{5})-(?P<city>\d{5})(?P<zone>\d{4})(?P<section>\d{4})\.(?P<ext>\w+)")
+    _regex3 = re.compile(r"o|s|t(?P<plea>\d{5})-(?P<city>\d{5})(?P<zone>\d{4})(?P<section>\d{4})\.(?P<ext>\w+)")
 
     def __init__(self, filename):
         self.filename = filename
@@ -67,3 +67,24 @@ class FileInfo:
             return
 
         raise ValueError("Filename format not recognized")
+
+    def get_state_index_path(election, state):
+        return f"{election}/config/{state}/{state}-e{election:0>6}-i.json"
+
+    def get_election_config_path():
+        return "comum/config/ele-c.json"
+
+    def get_picture_path(election, cand_state, sqcand):
+        return f"{election}/fotos/{cand_state}/{sqcand}.jpeg"
+
+    def get_sections_config_path(plea, state):
+        return f"arquivo-urna/{plea}/config/{state}/{state}-p{plea:0>6}-cs.json"
+
+    def _get_section_base_path(plea, state, city, zone, section):
+        return f"arquivo-urna/{plea}/dados/{state}/{city:0>5}/{zone:0>4}/{section:0>4}"
+
+    def get_section_aux_path(plea, state, city, zone, section):
+        return f"{FileInfo._get_section_base_path(plea, state, city, zone, section)}/p{plea:0>6}-{state}-m{city:0>5}-z{zone:0>4}-s{section:0>4}-aux.json"
+
+    def get_ballot_file_path(plea, state, city, zone, section, hash, filename):
+        return f"{FileInfo._get_section_base_path(plea, state, city, zone, section)}/{hash}/{filename}"

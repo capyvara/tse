@@ -34,20 +34,19 @@ class UrnaSpider(BaseSpider):
             if state == "br":
                 continue
 
-            filename = f"{state}-p{self.plea:0>6}-cs.json"
-            info = FileInfo(filename)
+            path = FileInfo.get_sections_config_path(self.plea, state)
 
-            sig_query = self.query_sig(info.path)
+            sig_query = self.query_sig(path)
             if sig_query:
                  yield sig_query
 
             try:
-                with open(self.get_local_path(info.path), "r") as f:
-                    logging.info(f"Reading sections config file {filename}")
+                with open(self.get_local_path(path), "r") as f:
+                    logging.info(f"Reading sections config file for {self.plea} {state}")
                     yield from self.query_sections(state, json.load(f))
             except (FileNotFoundError, json.JSONDecodeError):
-                logging.info(f"Queueing sections config file {filename}")
-                yield scrapy.Request(self.get_full_url(info.path), self.parse_section_config, errback=self.errback_section_config,
+                logging.info(f"Queueing sections config file for {self.plea} {state}")
+                yield scrapy.Request(self.get_full_url(path), self.parse_section_config, errback=self.errback_section_config,
                     dont_filter=True, priority=3, cb_kwargs={"state": state})
 
     def parse_section_config(self, response, state):
@@ -70,12 +69,12 @@ class UrnaSpider(BaseSpider):
         queued = 0
 
         for city, zone, section in self.expand_sections(data):
-            filename = f"p{self.plea:0>6}-{state}-m{city:0>5}-z{zone:0>4}-s{section:0>4}-aux.json"
+            path = FileInfo.get_section_aux_path(self.plea, state, city, zone, section)
+            filename = os.path.basename(path)
             size += 1
 
-            info = FileInfo(filename)
             try:
-                with open(self.get_local_path(info.path), "r") as f:
+                with open(self.get_local_path(path), "r") as f:
                     logging.debug(f"Reading section file {filename}")
 
                     aux_data = json.load(f)
@@ -89,7 +88,7 @@ class UrnaSpider(BaseSpider):
             except (FileNotFoundError, ValueError, json.JSONDecodeError):
                 logging.debug(f"Queueing section file {filename}")
                 queued += 1
-                yield scrapy.Request(self.get_full_url(info.path), self.parse_section, errback=self.errback_section,
+                yield scrapy.Request(self.get_full_url(path), self.parse_section, errback=self.errback_section,
                     dont_filter=True, priority=2, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
 
         logging.info(f"Queued {state} {queued} section files of {size}")
@@ -110,12 +109,11 @@ class UrnaSpider(BaseSpider):
                 yield (hash["hash"], filename)
 
     def download_ballot_files(self, state, city, zone, section, data):
-        base_path = f"arquivo-urna/{self.plea}/dados/{state}/{city:0>5}/{zone:0>4}/{section:0>4}"
         for hash, filename in self.expand_files(data):
             if self.ignore_pattern and self.ignore_pattern.match(filename):
                 continue
  
-            path = f"{base_path}/{hash}/{filename}"
+            path = FileInfo.get_ballot_file_path(self.plea, state, city, zone, section, hash, filename)
 
             if not os.path.exists(self.get_local_path(path)):
                 logging.debug(f"Queueing ballot file {filename}")
