@@ -9,6 +9,7 @@ from tse.common.basespider import BaseSpider
 from tse.common.fileinfo import FileInfo
 from tse.common.index import Index
 from tse.middlewares import defer_request
+from tse.parsers import FixedParser, IndexParser
 
 
 class DivulgaSpider(BaseSpider):
@@ -67,7 +68,7 @@ class DivulgaSpider(BaseSpider):
         added = 0
 
         data = json.loads(response.body)
-        for info, filedate in Index.expand(state, data):
+        for info, filedate in IndexParser.expand(state, data):
             size += 1
 
             if self.ignore_pattern and self.ignore_pattern.match(info.filename):
@@ -135,16 +136,10 @@ class DivulgaSpider(BaseSpider):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
         self.pending.pop(failure.request.cb_kwargs["info"].filename, None)
 
-    def expand_candidates(self, data):
-        for agr in data["carg"]["agr"]:
-            for par in agr["par"]:
-                for cand in par["cand"]:
-                    yield cand
-
     def query_pictures(self, data, info):
         added = 0
 
-        for cand in self.expand_candidates(data):
+        for cand in FixedParser.expand_candidates(data):
             sqcand = cand["sqcand"]
             # President is br, others go on state specific directories
             cand_state = info.state if info.cand != "1" else "br"

@@ -7,6 +7,7 @@ import scrapy
 
 from tse.common.basespider import BaseSpider
 from tse.common.fileinfo import FileInfo
+from tse.parsers import SectionAuxParser, SectionsConfigParser
 
 
 class UrnaSpider(BaseSpider):
@@ -73,19 +74,11 @@ class UrnaSpider(BaseSpider):
     def errback_section_config(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
-    def expand_sections(self, data):
-        for mu in data["abr"][0]["mu"]:
-            city = mu["cd"].lstrip("0")
-            for zon in mu["zon"]:
-                zone = zon["cd"].lstrip("0")
-                for sec in zon["sec"]:
-                    yield (city, zone, sec["ns"].lstrip("0"))
-
     def query_sections(self, state, data):
         size = 0
         queued = 0
 
-        for city, zone, section in self.expand_sections(data):
+        for city, zone, section in SectionsConfigParser.expand_sections(data):
             if self.shutdown:
                 break
 
@@ -120,16 +113,8 @@ class UrnaSpider(BaseSpider):
     def errback_section(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
-    def expand_files(self, data):
-        for hash in data["hashes"]:
-            if not hash["st"] in ["Totalizado", "Recebido", "Excluído"]:
-                continue
-
-            for filename in hash["nmarq"]:
-                yield (hash["hash"], filename)
-
     def download_ballot_files(self, state, city, zone, section, data):
-        for hash, filename in self.expand_files(data):
+        for hash, filename in SectionAuxParser.expand_files(data):
             if self.ignore_pattern and self.ignore_pattern.match(filename):
                 continue
  

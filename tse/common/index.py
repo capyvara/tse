@@ -5,26 +5,10 @@ import os
 import sqlite3
 
 from tse.common.fileinfo import FileInfo
+from tse.parsers import IndexParser
 
 
 class Index():
-    def expand(state, data):
-        for entry in data["arq"]:
-            filename = entry["nm"]
-            filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
-
-            if filename == "ele-c.json":
-                continue
-
-            info = FileInfo(filename)
-            if (info.prefix == "cert" or info.prefix == "mun") and state != "br":
-                continue
-            
-            if info.state and state != info.state:
-                continue
-
-            yield info, filedate
-
     def __init__(self, persist_path=None):
         self.con = sqlite3.connect(persist_path if persist_path else ":memory:", 
             detect_types=sqlite3.PARSE_DECLTYPES)
@@ -109,7 +93,7 @@ class Index():
     def append_state(self, state, path):
         with open(path, "r") as f:
             data = json.load(f)
-            self._upsert_from_iterator([(i.filename, d) for i, d in Index.expand(state, data)])
+            self._upsert_from_iterator([(i.filename, d) for i, d in IndexParser.expand(state, data)])
 
         logging.info(f"Appended index from: {path}")
 
@@ -136,13 +120,15 @@ class Index():
 
         return True
     
-    def _json_serialize(self, obj):
+    @staticmethod
+    def _json_serialize(obj):
         if isinstance(obj, (datetime.datetime, datetime.date)):
             return obj.strftime("%d/%m/%Y %H:%M:%S")
 
         raise TypeError("Type %s not serializable" % type(obj))            
 
-    def _json_parse(self, json_dict):
+    @staticmethod
+    def _json_parse(json_dict):
         for (key, value) in json_dict.items():
             try:
                 json_dict[key] = datetime.datetime.strptime(value, "%d/%m/%Y %H:%M:%S")
