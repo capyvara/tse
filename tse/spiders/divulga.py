@@ -6,8 +6,8 @@ import os
 import scrapy
 
 from tse.common.basespider import BaseSpider
-from tse.common.pathinfo import PathInfo
 from tse.common.index import Index
+from tse.common.pathinfo import PathInfo
 from tse.middlewares import defer_request
 from tse.parsers import FixedParser, IndexParser
 
