@@ -1,3 +1,4 @@
+import glob
 import json
 import logging
 import os
@@ -23,15 +24,6 @@ class DivulgaSpider(BaseSpider):
         super().__init__(*args, **kwargs)
         self.continuous = continuous
     
-    def append_states_index(self, election):
-        # TUDO: scandir
-        for state in self.states:
-            file_path = self.get_local_path(FileInfo.get_state_index_path(election, state))
-            if not os.path.exists(file_path):
-                continue
-    
-            self.index.append_state(state, file_path)
-
     def load_index(self):
         self.index = Index(self.get_local_path("index.db", no_cycle=True))
 
@@ -39,22 +31,16 @@ class DivulgaSpider(BaseSpider):
         if len(self.index) == 0:
             logging.info("Empty index found, loading from downloaded index files")
 
-            with os.scandir(base_local_path) as it:
-                for entry in it:
-                    if entry.is_file() or entry.name.startswith('.'): 
-                        continue
-                    try:
-                        election = int(entry.name)
-                        self.append_states_index(str(election))
-                    except ValueError:
-                        pass
+            for state_index_path in glob.glob(f"{base_local_path}/[0-9]*/config/[a-z][a-z]/*.json", recursive=True):
+                info = FileInfo(os.path.basename(state_index_path))
+                self.index.append_state(info.state, state_index_path)
                     
         self.index.validate(base_local_path)
 
         logging.info(f"Index size {len(self.index)}")
 
     def continue_requests(self, config_response):
-        self.load_index()        
+        self.load_index()
         self.pending = dict()
 
         for election in self.elections:
