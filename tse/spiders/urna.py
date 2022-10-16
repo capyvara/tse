@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import signal
 
 import scrapy
 
@@ -10,6 +11,15 @@ from tse.common.fileinfo import FileInfo
 
 class UrnaSpider(BaseSpider):
     name = "urna"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.shutdown = False
+        self.sigHandler = None
+
+    def handle_sigint(self, signum, frame):
+        self.shutdown = True
+        self.sigHandler(signum, frame)
 
     def query_sig(self, path, force=False):
         sig_path = os.path.splitext(path)[0] + ".sig"
@@ -26,6 +36,10 @@ class UrnaSpider(BaseSpider):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
     def start_requests(self):
+        # Allows us to stop in the middle of start_requests
+        self.sigHandler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, self.handle_sigint)
+        
         self.load_settings()
         yield from self.query_sections_configs()
 
@@ -33,6 +47,9 @@ class UrnaSpider(BaseSpider):
         for state in self.states:
             if state == "br":
                 continue
+
+            if self.shutdown:
+                break
 
             path = FileInfo.get_sections_config_path(self.plea, state)
 
@@ -69,6 +86,9 @@ class UrnaSpider(BaseSpider):
         queued = 0
 
         for city, zone, section in self.expand_sections(data):
+            if self.shutdown:
+                break
+
             path = FileInfo.get_section_aux_path(self.plea, state, city, zone, section)
             filename = os.path.basename(path)
             size += 1
