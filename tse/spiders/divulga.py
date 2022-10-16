@@ -53,28 +53,19 @@ class DivulgaSpider(BaseSpider):
 
         logging.info(f"Index size {len(self.index)}")
 
-    def start_requests(self):
-        self.load_settings()
+    def continue_requests(self, config_response):
         self.load_index()        
         self.pending = dict()
 
-        yield from self.query_common()
+        for election in self.elections:
+            logging.info(f"Queueing election: {election}")
+            yield from self.generate_requests_index(election)
 
     def closed(self, reason):
         if self.settings["INDEX_SAVE_JSON"]:
             self.index.save_json(self.get_local_path(f"index.json", no_cycle=True))
 
         self.index.close()
-
-    def query_common(self):
-        yield scrapy.Request(self.get_full_url(FileInfo.get_election_config_path(), no_cycle=True), self.parse_config, dont_filter=True)
-
-    def parse_config(self, response):
-        self.persist_response(response, check_identical=True)
-
-        for election in self.elections:
-            logging.info(f"Queueing election: {election}")
-            yield from self.generate_requests_index(election)
 
     def generate_requests_index(self, election):
         for state in self.states:

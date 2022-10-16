@@ -7,6 +7,8 @@ import zipfile
 
 import scrapy
 
+from tse.common.fileinfo import FileInfo
+
 
 class BaseSpider(scrapy.Spider):
     name = "base"
@@ -14,6 +16,20 @@ class BaseSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._version_path_cache = {}
+
+    def continue_requests(self, contig_response):
+        raise NotImplementedError(f'{self.__class__.__name__}.parse callback is not defined')
+
+    def start_requests(self):
+        self.load_settings()
+        yield from self.query_common()
+
+    def query_common(self):
+        yield scrapy.Request(self.get_full_url(FileInfo.get_election_config_path(), no_cycle=True), self.parse_config, dont_filter=True)
+
+    def parse_config(self, response):
+        self.persist_response(response, check_identical=True)
+        yield from self.continue_requests(response)
 
     def get_local_path(self, path, no_cycle=False):
         if no_cycle:

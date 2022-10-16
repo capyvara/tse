@@ -35,12 +35,12 @@ class UrnaSpider(BaseSpider):
     def errback_sig(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
-    def start_requests(self):
+    def continue_requests(self, config_response):
         # Allows us to stop in the middle of start_requests
+        # TODO: Any way to control consuptiom of the generator?
         self.sigHandler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, self.handle_sigint)
-        
-        self.load_settings()
+
         yield from self.query_sections_configs()
 
     def query_sections_configs(self):
