@@ -7,7 +7,7 @@ import zipfile
 
 import scrapy
 
-from tse.common.fileinfo import FileInfo
+from tse.common.pathinfo import PathInfo
 
 
 class BaseSpider(scrapy.Spider):
@@ -25,7 +25,7 @@ class BaseSpider(scrapy.Spider):
         yield from self.query_common()
 
     def query_common(self):
-        yield scrapy.Request(self.get_full_url(FileInfo.get_election_config_path(), no_cycle=True), self.parse_config, dont_filter=True)
+        yield scrapy.Request(self.get_full_url(PathInfo.get_election_config_path(), no_cycle=True), self.parse_config, dont_filter=True)
 
     def parse_config(self, response):
         self.persist_response(response, check_identical=True)

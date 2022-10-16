@@ -6,7 +6,7 @@ import os
 import scrapy
 
 from tse.common.basespider import BaseSpider
-from tse.common.fileinfo import FileInfo
+from tse.common.pathinfo import PathInfo
 from tse.common.index import Index
 from tse.middlewares import defer_request
 from tse.parsers import FixedParser, IndexParser
@@ -33,7 +33,7 @@ class DivulgaSpider(BaseSpider):
             logging.info("Empty index found, loading from downloaded index files")
 
             for state_index_path in glob.glob(f"{base_local_path}/[0-9]*/config/[a-z][a-z]/*.json", recursive=True):
-                info = FileInfo(os.path.basename(state_index_path))
+                info = PathInfo(os.path.basename(state_index_path))
                 self.index.append_state(info.state, state_index_path)
                     
         self.index.validate(base_local_path)
@@ -57,7 +57,7 @@ class DivulgaSpider(BaseSpider):
     def generate_requests_index(self, election):
         for state in self.states:
             logging.debug(f"Queueing index file for {election}-{state}")
-            path = FileInfo.get_state_index_path(election, state)
+            path = PathInfo.get_state_index_path(election, state)
             yield scrapy.Request(self.get_full_url(path), self.parse_index, errback=self.errback_index,
                 dont_filter=True, priority=4, cb_kwargs={"election": election, "state":state})
 
@@ -144,7 +144,7 @@ class DivulgaSpider(BaseSpider):
             # President is br, others go on state specific directories
             cand_state = info.state if info.cand != "1" else "br"
             
-            path = FileInfo.get_picture_path(info.election, cand_state, sqcand)
+            path = PathInfo.get_picture_path(info.election, cand_state, sqcand)
             filename = os.path.basename(path)
             if filename in self.pending:
                 continue

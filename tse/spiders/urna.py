@@ -6,7 +6,7 @@ import signal
 import scrapy
 
 from tse.common.basespider import BaseSpider
-from tse.common.fileinfo import FileInfo
+from tse.common.pathinfo import PathInfo
 from tse.parsers import SectionAuxParser, SectionsConfigParser
 
 
@@ -52,7 +52,7 @@ class UrnaSpider(BaseSpider):
             if self.shutdown:
                 break
 
-            path = FileInfo.get_sections_config_path(self.plea, state)
+            path = PathInfo.get_sections_config_path(self.plea, state)
 
             sig_query = self.query_sig(path)
             if sig_query:
@@ -82,7 +82,7 @@ class UrnaSpider(BaseSpider):
             if self.shutdown:
                 break
 
-            path = FileInfo.get_section_aux_path(self.plea, state, city, zone, section)
+            path = PathInfo.get_section_aux_path(self.plea, state, city, zone, section)
             filename = os.path.basename(path)
             size += 1
 
@@ -118,7 +118,7 @@ class UrnaSpider(BaseSpider):
             if self.ignore_pattern and self.ignore_pattern.match(filename):
                 continue
  
-            path = FileInfo.get_ballot_file_path(self.plea, state, city, zone, section, hash, filename)
+            path = PathInfo.get_ballot_file_path(self.plea, state, city, zone, section, hash, filename)
 
             if not os.path.exists(self.get_local_path(path)):
                 logging.debug(f"Queueing ballot file {filename}")

@@ -1,6 +1,6 @@
 import datetime
 
-from tse.common.fileinfo import FileInfo
+from tse.common.pathinfo import PathInfo
 
 
 class IndexParser: 
@@ -13,7 +13,7 @@ class IndexParser:
             if filename == "ele-c.json":
                 continue
 
-            info = FileInfo(filename)
+            info = PathInfo(filename)
             if (info.prefix == "cert" or info.prefix == "mun") and state != "br":
                 continue
             

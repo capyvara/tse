@@ -4,7 +4,7 @@ import logging
 import os
 import sqlite3
 
-from tse.common.fileinfo import FileInfo
+from tse.common.pathinfo import PathInfo
 from tse.parsers import IndexParser
 
 
@@ -106,7 +106,7 @@ class Index():
             logging.info(f"Removed {len(invalid)} invalid index entries")
 
     def _validate_entry(self, base_path, filename, filedate):
-        info = FileInfo(filename)
+        info = PathInfo(filename)
         target_path = os.path.join(base_path, info.path)
 
         if not os.path.exists(target_path):
