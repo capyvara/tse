@@ -2,5 +2,6 @@
     "python.analysis.exclude": ["**/data/**"],
     "files.watcherExclude": {
         "**/data/**": true
-    }
+    },
+    "jupyter.notebookFileRoot": "${workspaceFolder}"
 }

@@ -1,3 +1,4 @@
+import os
 import re
 
 
@@ -69,6 +70,20 @@ class PathInfo:
         raise ValueError("Filename format not recognized")
 
     @staticmethod
+    def get_local_path(settings, path, no_cycle=False):
+        if no_cycle:
+            return os.path.join(settings["FILES_STORE"], settings["ENVIRONMENT"], path)
+
+        return os.path.join(settings["FILES_STORE"], settings["ENVIRONMENT"], settings["CYCLE"], path)
+
+    @staticmethod
+    def get_full_url(settings, path, no_cycle=False):
+        if no_cycle:
+            return os.path.join(f"{settings['HOST']}/{settings['ENVIRONMENT']}", path)
+
+        return os.path.join(f"{settings['HOST']}/{settings['ENVIRONMENT']}/{settings['CYCLE']}", path)
+
+    @staticmethod
     def get_state_index_path(election, state):
         return f"{election}/config/{state}/{state}-e{election:0>6}-i.json"
     
@@ -93,5 +108,9 @@ class PathInfo:
         return f"{cls._get_section_base_path(plea, state, city, zone, section)}/p{plea:0>6}-{state}-m{city:0>5}-z{zone:0>4}-s{section:0>4}-aux.json"
 
     @classmethod
-    def get_ballot_file_path(cls, plea, state, city, zone, section, hash, filename):
+    def get_ballot_box_file_path(cls, plea, state, city, zone, section, hash, filename):
         return f"{cls._get_section_base_path(plea, state, city, zone, section)}/{hash}/{filename}"
+
+    @classmethod
+    def get_ballot_box_file_path_ext(cls, plea, state, city, zone, section, hash, ext, phase = "o"):
+        return cls.get_ballot_box_file_path(plea, state, city, zone, section, hash, f"{phase}{plea:0>5}-{city:0>5}{zone:0>4}{section:0>4}.{ext}")

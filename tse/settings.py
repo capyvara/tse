@@ -45,7 +45,8 @@ AUTOTHROTTLE_TARGET_CONCURRENCY = 10.0
 RETRY_TIMES = 5
 
 # States to get information from, beware that without "br" some shared files such as config woudn't be downloaded
-STATES = "br ac al am ap ba ce df es go ma mg ms mt pa pb pe pi pr rj rn ro rr rs sc se sp to zz"
+STATES = ["br", "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go", "ma", "mg", "ms", "mt", "pa", 
+            "pb", "pe", "pi", "pr", "rj", "rn", "ro", "rr", "rs", "sc", "se", "sp", "to", "zz"]
 
 # Download pictures of the candidates
 DOWNLOAD_PICTURES = True

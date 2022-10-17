@@ -24,7 +24,7 @@ https://www.tse.jus.br/eleicoes/eleicoes-2022/documentacao-tecnica-do-software-d
   - Scrapping is incremental and can be peformed continuously to get latest data if available, 
   - Files are downloaded to `data/download/...`
 
-- Run `scrapy crawl urna` to download all the original files transmitted from the ballots (ballot bulletin, logs, etc), 
+- Run `scrapy crawl urna` to download all the original files transmitted from the ballot boxes (bulletins, logs, etc), 
   - Beware that it's above 472k electoral sections with 6 files and about 200kb per section, totalling 2.8 million files 90gb
 
 - Edit `tse/setting.py` to customize paths, network usage, narrow down filters, etc.

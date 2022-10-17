@@ -32,16 +32,10 @@ class BaseSpider(scrapy.Spider):
         yield from self.continue_requests(response)
 
     def get_local_path(self, path, no_cycle=False):
-        if no_cycle:
-            return os.path.join(self.settings["FILES_STORE"], self.environment, path)
-
-        return os.path.join(self.settings["FILES_STORE"], self.environment, self.cycle, path)
+        return PathInfo.get_local_path(self.settings, path, no_cycle)
 
     def get_full_url(self, path, no_cycle=False):
-        if no_cycle:
-            return os.path.join(f"{self.host}/{self.environment}", path)
-
-        return os.path.join(f"{self.host}/{self.environment}/{self.cycle}", path)
+        return PathInfo.get_full_url(self.settings, path, no_cycle)
 
     def _scan_version_directory(self, ver_dir):
         with os.scandir(ver_dir) as it:
@@ -137,19 +131,31 @@ class BaseSpider(scrapy.Spider):
             dt_epoch = filedate.timestamp()
             os.utime(target_path, (dt_epoch, dt_epoch))
 
-    def load_settings(self):
-        self.host = self.settings["HOST"]
-        self.environment = self.settings["ENVIRONMENT"]
-        self.cycle = self.settings["CYCLE"]
-        self.plea = self.settings["PLEA"]
-        self.elections = self.settings["ELECTIONS"]
-        self.states = self.settings["STATES"].lower().split()
-        self.ignore_pattern = re.compile(self.settings["IGNORE_PATTERN"]) if self.settings["IGNORE_PATTERN"] else None
-        self.keep_old_versions = self.settings["KEEP_OLD_VERSIONS"]
+    @property
+    def plea(self):
+        return self.settings["PLEA"]
 
-        logging.info(f"Host: {self.host}")
-        logging.info(f"Environment: {self.environment}")
-        logging.info(f"Cycle: {self.cycle}")
+    @property
+    def elections(self):
+        return self.settings["ELECTIONS"]
+
+    @property
+    def states(self):
+        return self.settings["STATES"]
+
+    @property
+    def ignore_pattern(self):
+        return re.compile(self.settings["IGNORE_PATTERN"]) if self.settings["IGNORE_PATTERN"] else None
+
+    @property
+    def keep_old_versions(self):
+        return self.settings["KEEP_OLD_VERSIONS"]
+
+    def load_settings(self):
+        logging.info(f"Host: {self.settings['HOST']}")
+        logging.info(f"Environment: {self.settings['ENVIRONMENT']}")
+        logging.info(f"Cycle: {self.settings['CYCLE']}")
+        
         logging.info(f"Plea: {self.plea}")
         logging.info(f"Elections: {self.elections}")
-        logging.info(f"States: {self.settings['STATES']}")
+        logging.info(f"States: {self.states}")

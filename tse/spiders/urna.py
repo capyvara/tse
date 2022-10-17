@@ -97,7 +97,7 @@ class UrnaSpider(BaseSpider):
                     if not aux_data["st"] in ["Totalizada", "Recebida", "Anulada"]:
                         raise ValueError("Section not totalled up yet")
 
-                    yield from self.download_ballot_files(state, city, zone, section, aux_data)
+                    yield from self.download_ballot_box_files(state, city, zone, section, aux_data)
             except (FileNotFoundError, ValueError, json.JSONDecodeError):
                 logging.debug(f"Queueing section file {filename}")
                 queued += 1
@@ -108,25 +108,25 @@ class UrnaSpider(BaseSpider):
 
     def parse_section(self, response, state, city, zone, section):
         self.persist_response(response, check_identical=True)
-        yield from self.download_ballot_files(state, city, zone, section, json.loads(response.body))
+        yield from self.download_ballot_box_files(state, city, zone, section, json.loads(response.body))
 
     def errback_section(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
-    def download_ballot_files(self, state, city, zone, section, data):
+    def download_ballot_box_files(self, state, city, zone, section, data):
         for hash, filename in SectionAuxParser.expand_files(data):
             if self.ignore_pattern and self.ignore_pattern.match(filename):
                 continue
  
-            path = PathInfo.get_ballot_file_path(self.plea, state, city, zone, section, hash, filename)
+            path = PathInfo.get_ballot_box_file_path(self.plea, state, city, zone, section, hash, filename)
 
             if not os.path.exists(self.get_local_path(path)):
-                logging.debug(f"Queueing ballot file {filename}")
-                yield scrapy.Request(self.get_full_url(path), self.parse_ballot_file, errback=self.errback_ballot_file,
+                logging.debug(f"Queueing ballot box file {filename}")
+                yield scrapy.Request(self.get_full_url(path), self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
                     dont_filter=True, priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
 
-    def parse_ballot_file(self, response, state, city, zone, section):
+    def parse_ballot_box_file(self, response, state, city, zone, section):
         self.persist_response(response)
 
-    def errback_ballot_file(self, failure):
+    def errback_ballot_box_file(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
