@@ -15,7 +15,7 @@ class Index():
 
         with self.con:
             self.con.execute((
-                "CREATE TABLE IF NOT EXISTS \"file_dates\" ("
+                "CREATE TABLE IF NOT EXISTS file_dates ("
                 "  filename TEXT PRIMARY KEY,"
                 "  filedate TIMESTAMP"
                 ") WITHOUT ROWID"
