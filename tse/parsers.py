@@ -1,5 +1,4 @@
 import datetime
-import logging
 
 from tse.common.pathinfo import PathInfo
 
@@ -57,3 +56,22 @@ class SectionAuxParser:
 
             for filename in hash["nmarq"]:
                 yield (hash["hash"], filename)
+
+    @staticmethod
+    def get_ballot_box_files(data):
+        if data["st"] not in ["Totalizada", "Recebida"]:
+            return (None, None)
+
+        valid_hashes = [h for h in data["hashes"] if h["st"] in ["Totalizado", "Recebido"] and h["hash"] != "0"]
+        if len(valid_hashes) == 1:
+            return (valid_hashes[0]["hash"],  valid_hashes[0]["nmarq"])
+
+        sorted_valid_hashes = sorted(valid_hashes, 
+            key=lambda h: datetime.datetime.strptime(h["dr"] + h["hr"], "%d/%m/%Y%H:%M:%S"),
+            reverse=True)
+
+        if len(sorted_valid_hashes) > 0:
+            return (sorted_valid_hashes[0]["hash"],  sorted_valid_hashes[0]["nmarq"])
+
+        return (None, None)
+        
