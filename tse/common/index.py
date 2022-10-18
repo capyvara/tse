@@ -21,6 +21,8 @@ class Index():
                 ") WITHOUT ROWID"
             ))
 
+            self.con.execute("PRAGMA synchronous = OFF")
+
         if persist_path:
             logging.info(f"Index persist path: {persist_path}")
 

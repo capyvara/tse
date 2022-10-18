@@ -131,6 +131,8 @@ class BaseSpider(scrapy.Spider):
             dt_epoch = filedate.timestamp()
             os.utime(target_path, (dt_epoch, dt_epoch))
 
+        return target_path
+
     @property
     def plea(self):
         return self.settings["PLEA"]

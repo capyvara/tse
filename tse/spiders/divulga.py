@@ -15,6 +15,13 @@ from tse.parsers import FixedParser, IndexParser
 class DivulgaSpider(BaseSpider):
     name = "divulga"
 
+    # Priorities (higher to lower)
+    # 4 - Initial indexes
+    # 3 - Static files (ex: configs, fixed data)
+    # 2 - Aggregated results
+    # 1 - Re-indexing continuous
+    # 0 - Variable files 
+
     custom_settings = {
         "DOWNLOADER_MIDDLEWARES": {
            'tse.middlewares.DeferMiddleware': 543,
@@ -26,7 +33,7 @@ class DivulgaSpider(BaseSpider):
         self.continuous = continuous
     
     def load_index(self):
-        self.index = Index(self.get_local_path("index.db", no_cycle=True))
+        self.index = Index(self.get_local_path("index_divulga.db", no_cycle=True))
 
         base_local_path = self.get_local_path("")
         if len(self.index) == 0:
@@ -85,13 +92,6 @@ class DivulgaSpider(BaseSpider):
                 continue
 
             added += 1
-
-            # Priorities (higher to lower)
-            # 4 - Initial indexes
-            # 3 - Static files (ex: configs, fixed data)
-            # 2 - Aggregated results
-            # 1 - Re-indexing continuous
-            # 0 - Variable files 
 
             priority = 3
 

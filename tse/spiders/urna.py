@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 import os
@@ -7,12 +8,20 @@ import scrapy
 from scrapy.spidermiddlewares.httperror import HttpError
 
 from tse.common.basespider import BaseSpider
+from tse.common.index import Index
 from tse.common.pathinfo import PathInfo
-from tse.parsers import SectionAuxParser, SectionsConfigParser
+from tse.parsers import (SectionAuxParser, SectionsConfigParser,
+                         get_dh_timestamp)
 
 
 class UrnaSpider(BaseSpider):
     name = "urna"
+
+    # Priorities (higher to lower)
+    # 4 - Section configs
+    # 3 - Section configs.sig
+    # 2 - Aux files
+    # 1 - Ballot files
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -23,25 +32,52 @@ class UrnaSpider(BaseSpider):
         self.shutdown = True
         self.sigHandler(signum, frame)
 
-    def query_sig(self, path, force=False):
-        sig_path = os.path.splitext(path)[0] + ".sig"
-        if force or not os.path.exists(self.get_local_path(sig_path)):
+    def load_json(self, path):
+        with open(path, "r") as f:
+            return json.load(f)
+
+    def query_sig(self, source_path, force=False):
+        sig_path = os.path.splitext(source_path)[0] + ".sig"
+        sig_local_path = self.get_local_path(sig_path)
+        
+        if force or not os.path.exists(sig_local_path):
             return scrapy.Request(self.get_full_url(sig_path), self.parse_sig, errback=self.errback_sig,
-                dont_filter=True, priority=3)
+                dont_filter=True, priority=3, cb_kwargs={"source_path": source_path})
+        else:
+            self.match_sig_filedate(self.get_local_path(source_path))
 
         return None
 
-    def parse_sig(self, response):
+    def match_sig_filedate(self, source_local_path):
+        sig_local_path = os.path.splitext(source_local_path)[0] + ".sig"
+        if os.path.exists(source_local_path) and os.path.exists(sig_local_path):
+            source_filedate = datetime.datetime.fromtimestamp(os.path.getmtime(source_local_path))
+            self.update_file_timestamp(sig_local_path, source_filedate)
+
+    def parse_sig(self, response, source_path):
         self.persist_response(response, check_identical=True)
+        self.match_sig_filedate(self.get_local_path(source_path))
 
     def errback_sig(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+
+    def load_index(self):
+        self.index = Index(self.get_local_path("index_urna.db", no_cycle=True))
+
+        logging.info(f"Index size {len(self.index)}")
+
+    def update_file_timestamp(self, target_path, filedate):
+        dt_epoch = filedate.timestamp()
+        os.utime(target_path, (dt_epoch, dt_epoch))
+        self.index[os.path.basename(target_path)] = filedate
 
     def continue_requests(self, config_response):
         # Allows us to stop in the middle of start_requests
         # TODO: Any way to control consuptiom of the generator?
         self.sigHandler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, self.handle_sigint)
+
+        self.load_index()
 
         yield from self.query_sections_configs()
 
@@ -55,21 +91,35 @@ class UrnaSpider(BaseSpider):
 
             path = PathInfo.get_sections_config_path(self.plea, state)
 
-            sig_query = self.query_sig(path)
-            if sig_query:
-                 yield sig_query
-
             try:
-                with open(self.get_local_path(path), "r") as f:
-                    logging.info(f"Reading sections config file for {self.plea} {state}")
-                    yield from self.query_sections(state, json.load(f))
+                logging.info(f"Reading sections config file for {self.plea} {state}")
+                local_path = self.get_local_path(path)
+                config_data = self.load_json(local_path)
+                
+                filedate = get_dh_timestamp(config_data, "dg", "hg")
+                self.update_file_timestamp(local_path, filedate)
+                
+                sig_query = self.query_sig(path)
+                if sig_query:
+                    yield sig_query
+
+                yield from self.query_sections(state, config_data)                
             except (FileNotFoundError, json.JSONDecodeError):
                 logging.info(f"Queueing sections config file for {self.plea} {state}")
                 yield scrapy.Request(self.get_full_url(path), self.parse_section_config, errback=self.errback_section_config,
-                    dont_filter=True, priority=3, cb_kwargs={"state": state})
+                    dont_filter=True, priority=4, cb_kwargs={"state": state})
+
+                sig_query = self.query_sig(path)
+                if sig_query:
+                    yield sig_query
 
     def parse_section_config(self, response, state):
-        self.persist_response(response, check_identical=True)
+        data = json.loads(response.body)
+        filedate = get_dh_timestamp(data, "dg", "hg")
+        persisted_path = self.persist_response(response, filedate, check_identical=True)
+        self.index[os.path.basename(persisted_path)] = filedate
+        self.match_sig_filedate(persisted_path)
+
         yield from self.query_sections(state, json.loads(response.body))
 
     def errback_section_config(self, failure):
@@ -88,18 +138,18 @@ class UrnaSpider(BaseSpider):
             size += 1
 
             try:
-                with open(self.get_local_path(path), "r") as f:
-                    logging.debug(f"Reading section file {filename}")
+                logging.debug(f"Reading section file {filename}")
+                local_path = self.get_local_path(path)
+                aux_data = self.load_json(local_path)
 
-                    aux_data = json.load(f)
-                    if aux_data["st"] in ["Não instalada"]:
-                        continue
+                filedate = get_dh_timestamp(aux_data, "dg", "hg")
+                self.update_file_timestamp(local_path, filedate)
 
-                    if not aux_data["st"] in ["Totalizada", "Recebida", "Anulada"]:
-                        raise ValueError("Section not totalled up yet")
+                if aux_data["st"] in ["Não instalada"]:
+                    continue
 
-                    yield from self.download_ballot_box_files(state, city, zone, section, aux_data)
-            except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                yield from self.download_ballot_box_files(state, city, zone, section, aux_data)
+            except (FileNotFoundError, json.JSONDecodeError):
                 logging.debug(f"Queueing section file {filename}")
                 queued += 1
                 yield scrapy.Request(self.get_full_url(path), self.parse_section, errback=self.errback_section,
@@ -108,7 +158,11 @@ class UrnaSpider(BaseSpider):
         logging.info(f"Queued {state} {queued} section files of {size}")
 
     def parse_section(self, response, state, city, zone, section):
-        self.persist_response(response, check_identical=True)
+        data = json.loads(response.body)
+        filedate = get_dh_timestamp(data, "dg", "hg")
+        persisted_path = self.persist_response(response, filedate, check_identical=True)
+        self.index[os.path.basename(persisted_path)] = filedate
+
         yield from self.download_ballot_box_files(state, city, zone, section, json.loads(response.body))
 
     def errback_section(self, failure):
@@ -119,19 +173,27 @@ class UrnaSpider(BaseSpider):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
     def download_ballot_box_files(self, state, city, zone, section, data):
-        for hash, filename in SectionAuxParser.expand_files(data):
+        hash, hashdate, filenames = SectionAuxParser.get_files(data)
+        if hash == None:
+            return
+            
+        for filename in filenames:
             if self.ignore_pattern and self.ignore_pattern.match(filename):
                 continue
- 
-            path = PathInfo.get_ballot_box_file_path(self.plea, state, city, zone, section, hash, filename)
 
-            if not os.path.exists(self.get_local_path(path)):
+            path = PathInfo.get_ballot_box_file_path(self.plea, state, city, zone, section, hash, filename)
+            local_path = self.get_local_path(path)
+
+            if not os.path.exists(local_path):
                 logging.debug(f"Queueing ballot box file {filename}")
                 yield scrapy.Request(self.get_full_url(path), self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
-                    dont_filter=True, priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
+                    dont_filter=True, priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section, "hashdate": hashdate})
+            else:
+                self.update_file_timestamp(local_path, hashdate)
 
-    def parse_ballot_box_file(self, response, state, city, zone, section):
-        self.persist_response(response)
+    def parse_ballot_box_file(self, response, state, city, zone, section, hashdate):
+        target_path = self.persist_response(response, hashdate)
+        self.index[os.path.basename(target_path)] = hashdate
 
     def errback_ballot_box_file(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")

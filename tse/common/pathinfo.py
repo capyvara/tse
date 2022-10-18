@@ -20,6 +20,7 @@ class PathInfo:
             self.ext = "json"
             return
 
+        # Divulgacao files + Urna section config
         result = self._regexes[0].match(filename)
         if result:
             self.prefix =result["prefix"] 
@@ -45,6 +46,7 @@ class PathInfo:
             
             return
 
+        # Section aux files
         result = self._regexes[1].match(filename)
         if result:
             self.plea = result["plea"].lstrip("0") if result["plea"] else None
@@ -60,6 +62,7 @@ class PathInfo:
 
             return
 
+        # Ballot box files
         result = self._regexes[2].match(filename)
         if result:
             self.plea = result["plea"].lstrip("0") if result["plea"] else None
@@ -69,6 +72,7 @@ class PathInfo:
             self.ext = result.group("ext")
             return
 
+        # Ballot box log contingency
         result = self._regexes[3].match(filename)
         if result:
             self.id_ballot_box = result["id_ballot_box"].lstrip("0") if result["id_ballot_box"] else None
