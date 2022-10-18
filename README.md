@@ -12,6 +12,10 @@ https://www.tse.jus.br/eleicoes/eleicoes-2022/arquivos/interessados
 
 https://www.tse.jus.br/eleicoes/eleicoes-2022/documentacao-tecnica-do-software-da-urna-eletronica
 
+English terms took from: 
+
+https://international.tse.jus.br/en/
+
 # Prerequisites
 - Python 3.6+
 - Python Poetry: https://python-poetry.org/docs/#installation 

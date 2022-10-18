@@ -1,13 +1,15 @@
 import os
 import re
+from datetime import datetime
 
 
 class PathInfo:
-    _regex1 = re.compile(r"^(?P<prefix>cert|mun)?(?P<state>\w{2})?(?P<city>\d{5})?(?:-?p(?P<plea>\d{6}))?(?:-c(?P<cand>\d{4}))?(?:-e(?P<election>\d{6}))?(?:-(?P<ver>\d{3}))?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)")
-
-    _regex2 = re.compile(r"^p(?P<plea>\d{6})-(?P<state>\w{2})-m(?P<city>\d{5})?-z(?P<zone>\d{4})?-s(?P<section>\d{4})?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)")
-
-    _regex3 = re.compile(r"o|s|t(?P<plea>\d{5})-(?P<city>\d{5})(?P<zone>\d{4})(?P<section>\d{4})\.(?P<ext>\w+)")
+    _regexes = [
+        re.compile(r"^(?P<prefix>cert|mun)?(?P<state>\w{2})?(?P<city>\d{5})?(?:-?p(?P<plea>\d{6}))?(?:-c(?P<cand>\d{4}))?(?:-e(?P<election>\d{6}))?(?:-(?P<ver>\d{3}))?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)"),
+        re.compile(r"^p(?P<plea>\d{6})-(?P<state>\w{2})-m(?P<city>\d{5})?-z(?P<zone>\d{4})?-s(?P<section>\d{4})?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)"),
+        re.compile(r"^(o|s|t)(?P<plea>\d{5})-(?P<city>\d{5})(?P<zone>\d{4})(?P<section>\d{4})\.(?P<ext>\w+)"),
+        re.compile(r"^(?P<id_ballot_box>\d{8})(?P<timestamp>\d{14})-(?P<seq>\d{2})\.(?P<ext>\w+)")
+    ]
 
     def __init__(self, filename):
         self.filename = filename
@@ -18,7 +20,7 @@ class PathInfo:
             self.ext = "json"
             return
 
-        result = self._regex1.match(filename)
+        result = self._regexes[0].match(filename)
         if result:
             self.prefix =result["prefix"] 
             self.state = result["state"]
@@ -43,7 +45,7 @@ class PathInfo:
             
             return
 
-        result = self._regex2.match(filename)
+        result = self._regexes[1].match(filename)
         if result:
             self.plea = result["plea"].lstrip("0") if result["plea"] else None
             self.state = result["state"]
@@ -58,12 +60,20 @@ class PathInfo:
 
             return
 
-        result = self._regex3.match(filename)
+        result = self._regexes[2].match(filename)
         if result:
             self.plea = result["plea"].lstrip("0") if result["plea"] else None
             self.city = result["city"].lstrip("0") if result["city"] else None
             self.zone = result["zone"].lstrip("0") if result["zone"] else None
             self.section = result["section"].lstrip("0") if result["section"] else None
+            self.ext = result.group("ext")
+            return
+
+        result = self._regexes[3].match(filename)
+        if result:
+            self.id_ballot_box = result["id_ballot_box"].lstrip("0") if result["id_ballot_box"] else None
+            self.timestamp = datetime.strptime(self.timestamp, r"%d%m%Y%H%M%S") if result["timestamp"] else None
+            self.seq = result.group("seq")
             self.ext = result.group("ext")
             return
 

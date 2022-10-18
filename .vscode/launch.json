@@ -24,15 +24,13 @@
                 "runspider",
                 "${file}",
                 "-s",
-                "AUTOTHROTTLE_DEBUG=True",
-                "-s", 
-                "SCHEDULER_DEBUG=True",
+                "AUTOTHROTTLE_DEBUG=False",
                 "--loglevel=DEBUG",
                 "-a",
-                "continuous=True"
+                "_continuous=True"
             ],
             "console": "integratedTerminal",
-            "env": {"__https_proxy": "localhost:8888"},
+            "env": {"https_proxy": "localhost:8888"},
             "justMyCode": false
         }
     ]

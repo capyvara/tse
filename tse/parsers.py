@@ -1,4 +1,5 @@
 import datetime
+import logging
 
 from tse.common.pathinfo import PathInfo
 
@@ -42,10 +43,16 @@ class SectionsConfigParser:
 
 
 class SectionAuxParser:
+
+    # data["st"] Totalizada, Recebida, Anulada, Não instalada
+
+    # hash["st"] Totalizado, Recebido, Excluído, Rejeitado, Sem arquivo
+    # Only Sem arquivo doesn't have actual files hash = "0"
+    
     @staticmethod
     def expand_files(data):
         for hash in data["hashes"]:
-            if not hash["st"] in ["Totalizado", "Recebido", "Excluído"]:
+            if not hash["st"] == "0":
                 continue
 
             for filename in hash["nmarq"]:

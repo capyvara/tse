@@ -16,6 +16,8 @@ optional = true
 
 [tool.poetry.group.analysis.dependencies]
 pandas = "^1.5.0"
+jupyter = "^1.0.0"
+py7zr = "^0.20.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

@@ -4,6 +4,7 @@ import os
 import signal
 
 import scrapy
+from scrapy.spidermiddlewares.httperror import HttpError
 
 from tse.common.basespider import BaseSpider
 from tse.common.pathinfo import PathInfo
@@ -111,6 +112,10 @@ class UrnaSpider(BaseSpider):
         yield from self.download_ballot_box_files(state, city, zone, section, json.loads(response.body))
 
     def errback_section(self, failure):
+        if failure.check(HttpError) and failure.value.response.status == 403:
+            logging.debug(f"Section config not found {str(failure.request)}")
+            return
+
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
     def download_ballot_box_files(self, state, city, zone, section, data):
