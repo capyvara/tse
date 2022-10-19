@@ -32,46 +32,45 @@ class UrnaSpider(BaseSpider):
         self.shutdown = True
         self.sigHandler(signum, frame)
 
-    def load_json(self, path):
-        with open(path, "r") as f:
-            return json.load(f)
-
-    def query_sig(self, source_path, force=False):
+    def query_sigfile(self, source_path, force=False):
         sig_path = os.path.splitext(source_path)[0] + ".sig"
         sig_local_path = self.get_local_path(sig_path)
         
         if force or not os.path.exists(sig_local_path):
-            return scrapy.Request(self.get_full_url(sig_path), self.parse_sig, errback=self.errback_sig,
+            return scrapy.Request(self.get_full_url(sig_path), self.parse_sigfile, errback=self.errback_sigfile,
                 dont_filter=True, priority=3, cb_kwargs={"source_path": source_path})
         else:
-            self.match_sig_filedate(self.get_local_path(source_path))
+            self.match_sigfile_filedate(self.get_local_path(source_path))
 
         return None
 
-    def match_sig_filedate(self, source_local_path):
+    def match_sigfile_filedate(self, source_local_path):
         sig_local_path = os.path.splitext(source_local_path)[0] + ".sig"
         if os.path.exists(source_local_path) and os.path.exists(sig_local_path):
             source_filedate = datetime.datetime.fromtimestamp(os.path.getmtime(source_local_path))
             self.update_file_timestamp(sig_local_path, source_filedate)
 
-    def parse_sig(self, response, source_path):
+    def parse_sigfile(self, response, source_path):
         self.persist_response(response, check_identical=True)
-        self.match_sig_filedate(self.get_local_path(source_path))
+        self.match_sigfile_filedate(self.get_local_path(source_path))
 
-    def errback_sig(self, failure):
+    def errback_sigfile(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
 
     def load_index(self):
-        self.index = Index(self.get_local_path("index_urna.db", no_cycle=True))
-
         logging.info(f"Index size {len(self.index)}")
 
     def update_file_timestamp(self, target_path, filedate):
         dt_epoch = filedate.timestamp()
-        os.utime(target_path, (dt_epoch, dt_epoch))
-        self.index[os.path.basename(target_path)] = filedate
+        if os.path.getmtime(target_path) != dt_epoch:
+            os.utime(target_path, (dt_epoch, dt_epoch))
+            
+        filename = os.path.basename(target_path)            
+        old_entry = self.index.get(filename)
+        if old_entry.index_date != filedate:
+            self.index[filename] = Index.Entry(filedate, old_entry.last_modified, old_entry.etag)
 
-    def continue_requests(self, config_response):
+    def continue_requests(self, config_data):
         # Allows us to stop in the middle of start_requests
         # TODO: Any way to control consuptiom of the generator?
         self.sigHandler = signal.getsignal(signal.SIGINT)
@@ -99,7 +98,7 @@ class UrnaSpider(BaseSpider):
                 filedate = get_dh_timestamp(config_data, "dg", "hg")
                 self.update_file_timestamp(local_path, filedate)
                 
-                sig_query = self.query_sig(path)
+                sig_query = self.query_sigfile(path)
                 if sig_query:
                     yield sig_query
 
@@ -109,7 +108,7 @@ class UrnaSpider(BaseSpider):
                 yield scrapy.Request(self.get_full_url(path), self.parse_section_config, errback=self.errback_section_config,
                     dont_filter=True, priority=4, cb_kwargs={"state": state})
 
-                sig_query = self.query_sig(path)
+                sig_query = self.query_sigfile(path)
                 if sig_query:
                     yield sig_query
 
@@ -117,10 +116,9 @@ class UrnaSpider(BaseSpider):
         data = json.loads(response.body)
         filedate = get_dh_timestamp(data, "dg", "hg")
         persisted_path = self.persist_response(response, filedate, check_identical=True)
-        self.index[os.path.basename(persisted_path)] = filedate
-        self.match_sig_filedate(persisted_path)
+        self.match_sigfile_filedate(persisted_path)
 
-        yield from self.query_sections(state, json.loads(response.body))
+        yield from self.query_sections(state, data)
 
     def errback_section_config(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
@@ -145,7 +143,7 @@ class UrnaSpider(BaseSpider):
                 filedate = get_dh_timestamp(aux_data, "dg", "hg")
                 self.update_file_timestamp(local_path, filedate)
 
-                if aux_data["st"] in ["Não instalada"]:
+                if aux_data["st"] in ("Não instalada"):
                     continue
 
                 yield from self.download_ballot_box_files(state, city, zone, section, aux_data)
@@ -160,10 +158,9 @@ class UrnaSpider(BaseSpider):
     def parse_section(self, response, state, city, zone, section):
         data = json.loads(response.body)
         filedate = get_dh_timestamp(data, "dg", "hg")
-        persisted_path = self.persist_response(response, filedate, check_identical=True)
-        self.index[os.path.basename(persisted_path)] = filedate
+        self.persist_response(response, filedate, check_identical=True)
 
-        yield from self.download_ballot_box_files(state, city, zone, section, json.loads(response.body))
+        yield from self.download_ballot_box_files(state, city, zone, section, data)
 
     def errback_section(self, failure):
         if failure.check(HttpError) and failure.value.response.status == 403:
@@ -176,7 +173,7 @@ class UrnaSpider(BaseSpider):
         hash, hashdate, filenames = SectionAuxParser.get_files(data)
         if hash == None:
             return
-            
+
         for filename in filenames:
             if self.ignore_pattern and self.ignore_pattern.match(filename):
                 continue
@@ -192,8 +189,7 @@ class UrnaSpider(BaseSpider):
                 self.update_file_timestamp(local_path, hashdate)
 
     def parse_ballot_box_file(self, response, state, city, zone, section, hashdate):
-        target_path = self.persist_response(response, hashdate)
-        self.index[os.path.basename(target_path)] = hashdate
+        self.persist_response(response, hashdate)
 
     def errback_ballot_box_file(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")

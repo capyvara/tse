@@ -3,7 +3,11 @@ import datetime
 from tse.common.pathinfo import PathInfo
 
 
+# Some .json files contains fields for date and hour of generation
 def get_dh_timestamp(data, d = "dg", h = "hg"):
+    if not d or not h in data:
+        return None
+
     return datetime.datetime.strptime(data[d] + data[h], "%d/%m/%Y%H:%M:%S")
 
 class IndexParser: 
@@ -52,10 +56,10 @@ class SectionAuxParser:
     
     @staticmethod
     def get_files(data):
-        if data["st"] not in ["Totalizada", "Recebida"]:
+        if data["st"] not in ("Totalizada", "Recebida"):
             return (None, None, None)
 
-        valid_hashes = [h for h in data["hashes"] if h["st"] in ["Totalizado", "Recebido"] and h["hash"] != "0"]
+        valid_hashes = [h for h in data["hashes"] if h["st"] in ("Totalizado", "Recebido") and h["hash"] != "0"]
         if len(valid_hashes) == 1:
             return (valid_hashes[0]["hash"],  get_dh_timestamp(valid_hashes[0], "dr", "hr"), valid_hashes[0]["nmarq"])
 

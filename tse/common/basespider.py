@@ -1,13 +1,18 @@
 import filecmp
+import json
 import logging
 import os
 import re
 import urllib.parse
 import zipfile
+from email.utils import parsedate_to_datetime
 
 import scrapy
+from scrapy.utils.python import to_unicode
 
+from tse.common.index import Index
 from tse.common.pathinfo import PathInfo
+from tse.parsers import get_dh_timestamp
 
 
 class BaseSpider(scrapy.Spider):
@@ -17,19 +22,26 @@ class BaseSpider(scrapy.Spider):
         super().__init__(*args, **kwargs)
         self._version_path_cache = {}
 
-    def continue_requests(self, contig_response):
+    def continue_requests(self, config_data, config_entry):
         raise NotImplementedError(f'{self.__class__.__name__}.parse callback is not defined')
 
     def start_requests(self):
-        self.load_settings()
+        self.initialize()
         yield from self.query_common()
 
     def query_common(self):
         yield scrapy.Request(self.get_full_url(PathInfo.get_election_config_path(), no_cycle=True), self.parse_config, dont_filter=True)
 
+    def load_json(self, path):
+        with open(path, "r") as f:
+            return json.load(f)
+
     def parse_config(self, response):
-        self.persist_response(response, check_identical=True)
-        yield from self.continue_requests(response)
+        config_data = json.loads(response.body)
+        config_date = get_dh_timestamp(config_data)
+        self.persist_response(response, config_date, check_identical=True)
+                
+        yield from self.continue_requests(config_data)
 
     def get_local_path(self, path, no_cycle=False):
         return PathInfo.get_local_path(self.settings, path, no_cycle)
@@ -99,9 +111,19 @@ class BaseSpider(scrapy.Spider):
         cache[basename] = version
         return ver_path
 
+    def _rfc1123_to_datetime(self, date_str):
+        try:
+            date_str = to_unicode(date_str, encoding='ascii')
+            return parsedate_to_datetime(date_str).replace(tzinfo=None)
+        except Exception:
+            return None  
+                  
+    def get_http_cache_headers(self, response):
+        return (self._rfc1123_to_datetime(response.headers[b"Last-Modified"]), response.headers[b"etag"])
+
     def persist_response(self, response, filedate=None, check_identical=False):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
-        target_path = os.path.join(self.settings["FILES_STORE"], url_path)
+        target_path = self.get_local_path(url_path)
         target_dir = os.path.dirname(target_path)
         os.makedirs(target_dir, exist_ok=True)
 
@@ -127,6 +149,9 @@ class BaseSpider(scrapy.Spider):
             with open(target_dir, "wb") as f:
                 f.write(response.body)
 
+        last_modified, etag = self.get_http_cache_headers(response)
+        self.index[os.path.basename(target_path)] = Index.Entry(filedate, last_modified, etag)
+            
         if filedate:
             dt_epoch = filedate.timestamp()
             os.utime(target_path, (dt_epoch, dt_epoch))
@@ -153,7 +178,7 @@ class BaseSpider(scrapy.Spider):
     def keep_old_versions(self):
         return self.settings["KEEP_OLD_VERSIONS"]
 
-    def load_settings(self):
+    def initialize(self):
         logging.info(f"Host: {self.settings['HOST']}")
         logging.info(f"Environment: {self.settings['ENVIRONMENT']}")
         logging.info(f"Cycle: {self.settings['CYCLE']}")
@@ -161,3 +186,5 @@ class BaseSpider(scrapy.Spider):
         logging.info(f"Plea: {self.plea}")
         logging.info(f"Elections: {self.elections}")
         logging.info(f"States: {self.states}")
+
+        self.index = Index(self.get_local_path(f"index_{self.name}.db", no_cycle=True))

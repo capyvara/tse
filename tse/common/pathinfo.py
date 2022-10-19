@@ -16,6 +16,7 @@ class PathInfo:
 
         if filename == "ele-c.json":
             self.path = f"comum/config/{filename}"
+            self.no_cycle = True
             self.type = "c"
             self.ext = "json"
             return
@@ -32,14 +33,15 @@ class PathInfo:
             self.ver = result["ver"].lstrip("0") if result["ver"] else None
             self.type = result.group("type")
             self.ext = result.group("ext")
+            self.no_cycle = False
 
-            if self.type in ["a", "cm"]:
+            if self.type in ("a", "cm"):
                 self.path = f"{self.election}/config/{filename}"
             elif self.type == "i":
                 self.path = f"{self.election}/config/{self.state}/{filename}"
             elif self.type == "r":
                 self.path = f"{self.election}/dados-simplificados/{self.state}/{filename}"
-            elif self.type in ["f", "v", "t", "e", "ab"]:
+            elif self.type in ("f", "v", "t", "e", "ab"):
                 self.path = f"{self.election}/dados/{self.state}/{filename}"
             elif self.type == "cs":
                 self.path = f"arquivo-urna/{self.plea}/config/{self.state}/{filename}"
@@ -56,6 +58,7 @@ class PathInfo:
             self.section = result["section"].lstrip("0") if result["section"] else None
             self.type = result.group("type")
             self.ext = result.group("ext")
+            self.no_cycle = False
 
             if self.type == "aux":
                 self.path = f"arquivo-urna/{self.plea}/dados/{self.state}/{self.city:0>5}/{self.zone:0>4}/{self.section:0>4}/{filename}"
