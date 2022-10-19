@@ -139,10 +139,12 @@ class BaseSpider(scrapy.Spider):
                     if check_identical and filecmp.cmp(tmp_path, target_path, shallow=False):
                         os.remove(target_path)
                     else:
-                        os.renames(target_path, self._get_next_version_path(target_path))
+                        next_version_path = self._get_next_version_path(target_path)
+                        os.makedirs(os.path.dirname(next_version_path), exist_ok=True)
+                        os.rename(target_path, next_version_path)
 
-                os.renames(tmp_path, target_path)
-            finally:
+                os.rename(tmp_path, target_path)
+            except:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
         else:
@@ -187,4 +189,5 @@ class BaseSpider(scrapy.Spider):
         logging.info(f"Elections: {self.elections}")
         logging.info(f"States: {self.states}")
 
+        os.makedirs(self.get_local_path(""), exist_ok=True)
         self.index = Index(self.get_local_path(f"index_{self.name}.db", no_cycle=True))

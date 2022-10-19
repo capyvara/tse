@@ -26,6 +26,7 @@ class Index():
             ))
 
             self.con.execute("PRAGMA synchronous = OFF")
+            self.con.execute("PRAGMA journal_mode = TRUNCATE")
 
         if persist_path:
             logging.info(f"Index persist path: {persist_path}")

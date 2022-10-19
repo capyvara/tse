@@ -21,8 +21,8 @@ COOKIES_ENABLED = False
 REFERER_ENABLED = False
 URLLENGTH_LIMIT = None
 SPIDER_MIDDLEWARES = {
-    'scrapy.spidermiddlewares.offsite.DepthMiddleware': None,
-    'scrapy.spidermiddlewares.offsite.UrlLengthMiddleware': None,
+    'scrapy.spidermiddlewares.depth.DepthMiddleware': None,
+    'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware': None,
     'scrapy.spidermiddlewares.offsite.OffsiteMiddleware': None,
 }
 
@@ -68,8 +68,8 @@ KEEP_OLD_VERSIONS = True
 # HOST = "https://resultados-sim.tse.jus.br"
 # ENVIRONMENT = "teste"
 # CYCLE = "ele2022"
-# ELECTIONS = [9240, 9238]
-# PLEA = []
+# ELECTIONS = ["9722", "9724"]
+# PLEA = "8480"
 
 
 # Prod env
