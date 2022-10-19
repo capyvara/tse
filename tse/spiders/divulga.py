@@ -35,12 +35,20 @@ class DivulgaSpider(BaseSpider):
 
     def append_state_index(self, state_index_path):
         info = PathInfo(os.path.basename(state_index_path))
+        if info.filename in self.index:
+            return
+
         state_index_data = self.load_json(state_index_path)
         self.index.add_many((f.filename, Index.Entry(d)) for f, d in IndexParser.expand(info.state, state_index_data))
         logging.info(f"Appended index from: {state_index_path}")
 
+        self.index[info.filename] = Index.Entry(None, None, None)
+
     def validate_index_entry(self, filename, entry: Index.Entry):
         info = PathInfo(filename)
+        if info.type == "i":
+            return True
+
         target_path = self.get_local_path(info.path, info.no_cycle)
         if not os.path.exists(target_path):
             logging.debug(f"Target path not found, skipping index {info.filename}")
@@ -56,17 +64,14 @@ class DivulgaSpider(BaseSpider):
     def validate_index(self):
         logging.info(f"Validating index...")
 
-        invalid = list([f for f, e in self.index.items() if not self.validate_index_entry(f, e)])
+        invalid = [f for f, e in self.index.items() if not self.validate_index_entry(f, e)]
         if len(invalid) > 0:
             self.index.remove_many(invalid)
             logging.info(f"Removed {len(invalid)} invalid index entries")
 
     def load_index(self):
-        if len(self.index) <= 1:
-            logging.info("Invalid index found, loading from downloaded index files")
-
-            for state_index_path in glob.glob(f"{self.get_local_path('')}/[0-9]*/config/[a-z][a-z]/*.json", recursive=True):
-                self.append_state_index(state_index_path)
+        for state_index_path in glob.glob(f"{self.get_local_path('')}/[0-9]*/config/[a-z][a-z]/*.json", recursive=True):
+            self.append_state_index(state_index_path)
 
         self.validate_index()
 
@@ -185,6 +190,8 @@ class DivulgaSpider(BaseSpider):
                 logging.debug(f"Queueing picture {filename}")
                 yield scrapy.Request(self.get_full_url(path), self.parse_picture, priority=1,
                     dont_filter=True, cb_kwargs={"filename": filename, "filedate": filedate})
+            else:
+                self.update_file_timestamp(target_path, filedate)
 
         if added > 0:
             logging.info(f"Added pictures {added}, total pending {len(self.pending)}")

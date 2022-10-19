@@ -63,7 +63,11 @@ class Index():
         row = self.con.execute("SELECT COUNT(*) FROM file_entries WHERE filename=:filename", {"filename": filename}).fetchone()
         return row and row[0] != 0
 
-    def items(self) -> Tuple[str, Entry]: 
+    def files(self) -> Iterable[str]: 
+        for row in self.con.execute("SELECT filename FROM file_entries"):
+            yield row[0]
+
+    def items(self) -> Iterable[Tuple[str, Entry]]: 
         for row in self.con.execute("SELECT filename, index_date, last_modified, etag FROM file_entries"):
             yield (row[0], Index.Entry(row[1], row[2], row[3]))
 

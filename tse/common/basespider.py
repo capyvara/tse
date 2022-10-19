@@ -123,6 +123,16 @@ class BaseSpider(scrapy.Spider):
         etag = to_unicode(response.headers[b"etag"]).strip('"')
         return (last_modified, etag)
 
+    def update_file_timestamp(self, target_path, filedate):
+        dt_epoch = filedate.timestamp()
+        if os.path.getmtime(target_path) != dt_epoch:
+            os.utime(target_path, (dt_epoch, dt_epoch))
+            
+        filename = os.path.basename(target_path)            
+        old_entry = self.index.get(filename)
+        if old_entry.index_date != filedate:
+            self.index[filename] = Index.Entry(filedate, old_entry.last_modified, old_entry.etag)
+
     def persist_response(self, response, filedate=None, check_identical=False):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
         target_path = os.path.join(self.settings["FILES_STORE"], url_path)

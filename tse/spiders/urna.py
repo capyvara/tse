@@ -8,7 +8,6 @@ import scrapy
 from scrapy.spidermiddlewares.httperror import HttpError
 
 from tse.common.basespider import BaseSpider
-from tse.common.index import Index
 from tse.common.pathinfo import PathInfo
 from tse.parsers import (SectionAuxParser, SectionsConfigParser,
                          get_dh_timestamp)
@@ -59,16 +58,6 @@ class UrnaSpider(BaseSpider):
 
     def load_index(self):
         logging.info(f"Index size {len(self.index)}")
-
-    def update_file_timestamp(self, target_path, filedate):
-        dt_epoch = filedate.timestamp()
-        if os.path.getmtime(target_path) != dt_epoch:
-            os.utime(target_path, (dt_epoch, dt_epoch))
-            
-        filename = os.path.basename(target_path)            
-        old_entry = self.index.get(filename)
-        if old_entry.index_date != filedate:
-            self.index[filename] = Index.Entry(filedate, old_entry.last_modified, old_entry.etag)
 
     def continue_requests(self, config_data):
         # Allows us to stop in the middle of start_requests
