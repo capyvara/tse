@@ -9,7 +9,7 @@ class Index():
     class Entry(NamedTuple):
         index_date: datetime.datetime = None
         last_modified: datetime.datetime = None
-        etag: bytes = None
+        etag: str = None
 
     def __init__(self, persist_path=None):
         self.con = sqlite3.connect(persist_path if persist_path else ":memory:", 
@@ -21,7 +21,7 @@ class Index():
                 "  filename TEXT PRIMARY KEY,"
                 "  index_date TIMESTAMP,"
                 "  last_modified TIMESTAMP,"
-                "  etag BLOB"
+                "  etag TEXT"
                 ") WITHOUT ROWID"
             ))
 

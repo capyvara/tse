@@ -119,11 +119,13 @@ class BaseSpider(scrapy.Spider):
             return None  
                   
     def get_http_cache_headers(self, response):
-        return (self._rfc1123_to_datetime(response.headers[b"Last-Modified"]), response.headers[b"etag"])
+        last_modified = self._rfc1123_to_datetime(response.headers[b"Last-Modified"])
+        etag = to_unicode(response.headers[b"etag"]).strip('"')
+        return (last_modified, etag)
 
     def persist_response(self, response, filedate=None, check_identical=False):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
-        target_path = self.get_local_path(url_path)
+        target_path = os.path.join(self.settings["FILES_STORE"], url_path)
         target_dir = os.path.dirname(target_path)
         os.makedirs(target_dir, exist_ok=True)
 
