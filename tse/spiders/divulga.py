@@ -42,7 +42,7 @@ class DivulgaSpider(BaseSpider):
 
         def expand_state_index():
             for f, d in IndexParser.expand(info.state, state_index_data): 
-                self.get_current_version(self.get_local_path(f.path))
+                self.update_current_version(self.get_local_path(f.path))
                 yield (f.filename, Index.Entry(d))
 
         self.index.add_many(expand_state_index())

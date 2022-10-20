@@ -97,7 +97,7 @@ class BaseSpider(scrapy.Spider):
         self._version_path_cache[dirname] = cache
         return cache
 
-    def get_current_version(self, path):
+    def update_current_version(self, path):
         dirname, filename = os.path.split(path)
         cache = self._get_version_path_cache(dirname)
 
@@ -147,7 +147,7 @@ class BaseSpider(scrapy.Spider):
         os.makedirs(target_dir, exist_ok=True)
 
         target_basename = os.path.basename(target_path)
-        current_version, current_version_path = self.get_current_version(target_path)
+        _, current_version_path = self.update_current_version(target_path)
 
         # TODO: Select patterns to keep old versions
 
@@ -164,7 +164,7 @@ class BaseSpider(scrapy.Spider):
                         os.makedirs(os.path.dirname(current_version_path), exist_ok=True)
                         os.rename(target_path, current_version_path)
                         os.rename(tmp_path, target_path)
-                        current_version, current_version_path = self.get_current_version(target_path)
+                        self.update_current_version(target_path)
                 else:
                     os.rename(tmp_path, target_path)
                 
