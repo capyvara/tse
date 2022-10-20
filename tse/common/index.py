@@ -16,17 +16,28 @@ class Index():
             detect_types=sqlite3.PARSE_DECLTYPES)
 
         with self.con:
+            self.con.execute("PRAGMA foreign_keys = ON")
+            self.con.execute("PRAGMA synchronous = OFF")
+            self.con.execute("PRAGMA journal_mode = TRUNCATE")
+
             self.con.execute((
-                "CREATE TABLE IF NOT EXISTS file_entries ("
-                "  filename TEXT PRIMARY KEY,"
+                "CREATE TABLE IF NOT EXISTS file_versions ("
+                "  filename TEXT,"
+                "  version INTEGER,"
                 "  index_date TIMESTAMP,"
                 "  last_modified TIMESTAMP,"
-                "  etag TEXT"
+                "  etag TEXT,"
+                "  PRIMARY KEY(filename,version)"
                 ") WITHOUT ROWID"
             ))
 
-            self.con.execute("PRAGMA synchronous = OFF")
-            self.con.execute("PRAGMA journal_mode = TRUNCATE")
+            self.con.execute((
+                "CREATE TABLE IF NOT EXISTS file_entries ("
+                "  filename TEXT PRIMARY KEY,"
+                "  version INTEGER,"
+                "  FOREIGN KEY(filename,version) REFERENCES file_versions(filename, version)"
+                ") WITHOUT ROWID"
+            ))
 
         if persist_path:
             logging.info(f"Index persist path: {persist_path}")
@@ -43,7 +54,10 @@ class Index():
         return
 
     def __getitem__(self, filename: str) -> Entry:
-        row = self.con.execute("SELECT index_date, last_modified, etag FROM file_entries WHERE filename=:filename", {"filename": filename}).fetchone()
+        row = self.con.execute((
+            "SELECT index_date, last_modified, etag FROM file_entries" 
+            " NATURAL LEFT JOIN file_versions WHERE file_entries.filename = :fn"), {"fn": filename}).fetchone()
+
         if not row:
             raise KeyError(filename)
         
@@ -55,12 +69,18 @@ class Index():
 
     def __setitem__(self, filename: str, entry: Entry):
         with self.con:
-            self.con.execute(("INSERT INTO file_entries VALUES (:filename, :index_date, :last_modified, :etag) "
-                "ON CONFLICT(filename) DO UPDATE SET index_date=:index_date, last_modified=:last_modified, etag=:etag WHERE filename=:filename"), 
-                    {"filename": filename, "index_date": entry.index_date, "last_modified": entry.last_modified, "etag": entry.etag})
+            row = self.con.execute("SELECT version FROM file_entries WHERE filename=:fn", {"fn": filename}).fetchone()
+            version = row[0] if row else 0
+
+            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :idx, :lmod, :etag)", 
+                    {"fn": filename, "ver": version, 
+                    "idx": entry.index_date, "lmod": entry.last_modified, "etag": entry.etag})
+
+            self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", 
+                    {"fn": filename, "ver": version})
 
     def __contains__(self, filename: str):
-        row = self.con.execute("SELECT COUNT(*) FROM file_entries WHERE filename=:filename", {"filename": filename}).fetchone()
+        row = self.con.execute("SELECT COUNT(*) FROM file_entries WHERE filename=:fn", {"fn": filename}).fetchone()
         return row and row[0] != 0
 
     def files(self) -> Iterable[str]: 
@@ -68,7 +88,8 @@ class Index():
             yield row[0]
 
     def items(self) -> Iterable[Tuple[str, Entry]]: 
-        for row in self.con.execute("SELECT filename, index_date, last_modified, etag FROM file_entries"):
+        for row in self.con.execute(("SELECT file_entries.filename, index_date, last_modified, etag FROM file_entries"
+                                     " NATURAL LEFT JOIN file_versions")):
             yield (row[0], Index.Entry(row[1], row[2], row[3]))
 
     def add(self, filename: str, entry: Entry):
@@ -86,11 +107,21 @@ class Index():
 
     def add_many(self, iterable: Iterable[tuple[str,Entry]]):
         with self.con:
-            data = ({"filename": f, "index_date": e.index_date, "last_modified": e.last_modified, "etag": e.etag} for f, e in iterable)
-            self.con.executemany(("INSERT INTO file_entries VALUES (:filename, :index_date, :last_modified, :etag) "
-                "ON CONFLICT(filename) DO UPDATE SET index_date=:index_date, last_modified=:last_modified, etag=:etag WHERE filename=:filename"), data)
+            data = [{"fn": f, "e": e} for f, e in iterable]
+
+            # TODO: Better to do multiple selects instead?
+            filenames = "'" + "','".join((f["fn"] for f in data)) + "'"
+            rows = self.con.execute(f"SELECT filename, version FROM file_entries WHERE filename IN ({filenames})").fetchall()
+
+            versions = dict(rows) if rows else dict()
+
+            replace_data = list({"fn": d["fn"], "ver": versions.get(d["fn"], 0), 
+                "idx": d["e"].index_date, "lmod": d["e"].last_modified, "etag": d["e"].etag} for d in data)
+
+            self.con.executemany("REPLACE INTO file_versions VALUES (:fn, :ver, :idx, :lmod, :etag)", replace_data)
+            self.con.executemany("REPLACE INTO file_entries VALUES (:fn, :ver)", replace_data)
 
     def remove_many(self, iterable: Iterable[str]):
         with self.con:
-            data = ({ "filename": f } for f in iterable)
-            self.con.executemany("DELETE FROM file_entries WHERE filename=:filename", data)
+            data = ({"fn": f} for f in iterable)
+            self.con.executemany("DELETE FROM file_entries WHERE filename=:fn", data)
