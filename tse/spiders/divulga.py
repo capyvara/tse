@@ -39,10 +39,17 @@ class DivulgaSpider(BaseSpider):
             return
 
         state_index_data = self.load_json(state_index_path)
-        self.index.add_many((f.filename, Index.Entry(d)) for f, d in IndexParser.expand(info.state, state_index_data))
+
+        def expand_state_index():
+            for f, d in IndexParser.expand(info.state, state_index_data): 
+                self.get_current_version(self.get_local_path(f.path))
+                yield (f.filename, Index.Entry(d))
+
+        self.index.add_many(expand_state_index())
+
         logging.info(f"Appended index from: {state_index_path}")
 
-        self.index[info.filename] = Index.Entry(None, None, None)
+        self.index[info.filename] = Index.Entry()
 
     def validate_index_entry(self, filename, entry: Index.Entry):
         info = PathInfo(filename)

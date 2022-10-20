@@ -1,8 +1,10 @@
+import datetime
 import filecmp
 import json
 import logging
 import os
 import re
+import time
 import urllib.parse
 import zipfile
 from email.utils import parsedate_to_datetime
@@ -59,10 +61,10 @@ class BaseSpider(scrapy.Spider):
                     with zipfile.ZipFile(entry.path, "r") as zip:
                         for info in zip.infolist():
                             if not info.is_dir() and not "/" in info.filename:
-                                yield info.filename
+                                yield (info.filename, time.mktime(info.date_time + (0, 0, -1)))
                     continue
 
-                yield entry.name
+                yield (entry.name, entry.stat().st_mtime)
 
     def _get_version_path_cache(self, dirname):
         if dirname in self._version_path_cache:
@@ -75,15 +77,18 @@ class BaseSpider(scrapy.Spider):
             self._version_path_cache[dirname] = cache
             return cache
 
-        for entry in self._scan_version_directory(ver_dir):            
+        for entry, mtime in self._scan_version_directory(ver_dir):            
             entry_root, entry_ext = os.path.splitext(entry)
 
             try:
                 idx = entry_root.rindex("_")
                 entry_version = int(entry_root[idx + 1:])
                 filename = f"{entry_root[:idx]}{entry_ext}"
-                max_version = cache.get(filename, 0)
-                cache[filename] = max(entry_version, max_version)
+                max_version = max(entry_version, cache.get(filename, 0))
+                cache[filename] = max_version
+
+                filedate = datetime.datetime.fromtimestamp(mtime)
+                self.index.ensure_version_exists(filename, max_version, filedate)
             except ValueError:
                 logging.debug(f"Error: skipping version from filename: {entry}")
                 continue
@@ -91,15 +96,15 @@ class BaseSpider(scrapy.Spider):
         self._version_path_cache[dirname] = cache
         return cache
 
-    def _get_next_version_path(self, path):
-        dirname, basename = os.path.split(path)
+    def get_current_version(self, path):
+        dirname, filename = os.path.split(path)
         cache = self._get_version_path_cache(dirname)
 
         ver_dir = os.path.join(dirname, ".ver")
-        ver_path = os.path.join(ver_dir, basename)
+        ver_path = os.path.join(ver_dir, filename)
 
-        root, ext = os.path.splitext(basename)
-        version = cache.get(basename, 0)
+        root, ext = os.path.splitext(filename)
+        version = cache.get(filename, 0)
 
         while True:
             version += 1
@@ -108,8 +113,9 @@ class BaseSpider(scrapy.Spider):
             if not os.path.exists(ver_path):
                 break
     
-        cache[basename] = version
-        return ver_path
+        cache[filename] = version
+        self.index.set_current_version(filename, version)
+        return (version, ver_path)
 
     def _rfc1123_to_datetime(self, date_str):
         try:
@@ -139,6 +145,9 @@ class BaseSpider(scrapy.Spider):
         target_dir = os.path.dirname(target_path)
         os.makedirs(target_dir, exist_ok=True)
 
+        target_basename = os.path.basename(target_path)
+        current_version, current_version_path = self.get_current_version(target_path)
+
         # TODO: Select patterns to keep old versions
 
         if self.keep_old_versions:
@@ -149,13 +158,15 @@ class BaseSpider(scrapy.Spider):
 
                 if os.path.exists(target_path):
                     if check_identical and filecmp.cmp(tmp_path, target_path, shallow=False):
-                        os.remove(target_path)
+                        os.remove(tmp_path)
                     else:
-                        next_version_path = self._get_next_version_path(target_path)
-                        os.makedirs(os.path.dirname(next_version_path), exist_ok=True)
-                        os.rename(target_path, next_version_path)
-
-                os.rename(tmp_path, target_path)
+                        os.makedirs(os.path.dirname(current_version_path), exist_ok=True)
+                        os.rename(target_path, current_version_path)
+                        os.rename(tmp_path, target_path)
+                        current_version, current_version_path = self.get_current_version(target_path)
+                else:
+                    os.rename(tmp_path, target_path)
+                
             except:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
@@ -164,7 +175,7 @@ class BaseSpider(scrapy.Spider):
                 f.write(response.body)
 
         last_modified, etag = self.get_http_cache_headers(response)
-        self.index[os.path.basename(target_path)] = Index.Entry(filedate, last_modified, etag)
+        self.index[target_basename] = Index.Entry(filedate, last_modified, etag)
             
         if filedate:
             dt_epoch = filedate.timestamp()
