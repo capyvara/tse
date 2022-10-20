@@ -21,7 +21,7 @@ class DivulgaSpider(BaseSpider):
     # 3 - Static files (ex: configs, fixed data)
     # 2 - Aggregated results
     # 1 - Re-indexing continuous
-    # 0 - Variable files 
+    # 0 - Variable files, .sig files 
 
     custom_settings = {
         "DOWNLOADER_MIDDLEWARES": {
@@ -133,7 +133,7 @@ class DivulgaSpider(BaseSpider):
 
             if info.type == "r": 
                 priority = 2
-            elif info.type == "v":
+            elif info.type == "v" or info.ext == "sig":
                 priority = 0
 
             logging.debug(f"Queueing file {info.filename} [{self.index.get(info.filename).index_date} > {filedate}]")
