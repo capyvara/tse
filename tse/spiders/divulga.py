@@ -53,7 +53,7 @@ class DivulgaSpider(BaseSpider):
 
     def validate_index_entry(self, filename, entry: Index.Entry):
         info = PathInfo(filename)
-        if info.type == "i":
+        if not info.path or info.type == "i":
             return True
 
         target_path = self.get_local_path(info.path, info.no_cycle)
@@ -145,7 +145,7 @@ class DivulgaSpider(BaseSpider):
             logging.info(f"Parsed index for {election}-{state}, size {size}, added {added}, total pending {len(self.pending)}")
 
         if self.continuous and self.crawler.crawling:
-            reindex_request = defer_request(30.0, response.request)
+            reindex_request = defer_request(60.0, response.request)
             reindex_request.priority = 1
             reindex_request.meta["reindex_count"] = reindex_request.meta.get("reindex_count", 0) + 1
             logging.debug(f"Queueing re-indexing of {election}-{state}, count: {reindex_request.meta['reindex_count']}")
@@ -159,10 +159,10 @@ class DivulgaSpider(BaseSpider):
         
         data = None
         
-        if info.ext == ".json":
+        if info.ext == "json":
             try:
                 data = json.loads(response.body)
-                filedate = get_dh_timestamp(data)
+                filedate = max(get_dh_timestamp(data), filedate)
             except json.JSONDecodeError:
                 logging.warning(f"Malformed json at {info.filename}, skipping parse")
                 pass

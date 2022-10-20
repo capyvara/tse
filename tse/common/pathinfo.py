@@ -13,6 +13,22 @@ class PathInfo:
 
     def __init__(self, filename):
         self.filename = filename
+        self.path = None
+        self.prefix = None
+        self.state = None
+        self.city = None
+        self.cand = None
+        self.election = None
+        self.plea = None
+        self.zone = None
+        self.section = None
+        self.ver = None
+        self.type = None
+        self.ext = None
+        self.no_cycle = False
+        self.id_ballot_box = None
+        self.timestamp = None
+        self.seq = None
 
         if filename == "ele-c.json":
             self.path = f"comum/config/{filename}"
@@ -20,6 +36,10 @@ class PathInfo:
             self.type = "c"
             self.ext = "json"
             return
+
+        if os.path.splitext(filename)[1] == ".jpeg":
+            self.ext = ".jpeg"
+            return 
 
         # Divulgacao files + Urna section config
         result = self._regexes[0].match(filename)
@@ -33,7 +53,6 @@ class PathInfo:
             self.ver = result["ver"].lstrip("0") if result["ver"] else None
             self.type = result.group("type")
             self.ext = result.group("ext")
-            self.no_cycle = False
 
             if self.type in ("a", "cm"):
                 self.path = f"{self.election}/config/{filename}"
@@ -58,7 +77,6 @@ class PathInfo:
             self.section = result["section"].lstrip("0") if result["section"] else None
             self.type = result.group("type")
             self.ext = result.group("ext")
-            self.no_cycle = False
 
             if self.type == "aux":
                 self.path = f"arquivo-urna/{self.plea}/dados/{self.state}/{self.city:0>5}/{self.zone:0>4}/{self.section:0>4}/{filename}"

@@ -44,7 +44,7 @@ def zip_root_files(zip):
 def pack(ver_dir, files):
     zippable_files = sorted([f for f in files if not f.startswith(".") and os.path.splitext(f)[1] != ".zip"])
     if len(zippable_files) == 0:
-        return
+        return 0
 
     backup_path = os.path.join(ver_dir, ".bpk__pack.zip")
     if os.path.exists(backup_path):
@@ -80,7 +80,11 @@ def pack(ver_dir, files):
             logging.debug(f"    - {file}")
             os.remove(os.path.join(ver_dir, file))
 
+    return len(zippable_files)
+
 def unpack(ver_dir, files):
+    unpacked = 0
+
     zip_files = sorted([f for f in files if not f.startswith(".") and os.path.splitext(f)[1] == ".zip"])
     if len(zip_files) == 0:
         return
@@ -97,7 +101,9 @@ def unpack(ver_dir, files):
                 # Restore original mod time
                 fullpath = os.path.join(ver_dir, zipinfo.filename)
                 date_time = time.mktime(zipinfo.date_time + (0, 0, -1))
-                os.utime(fullpath, (date_time, date_time))                
+                os.utime(fullpath, (date_time, date_time))   
+
+                unpacked += 1             
 
             
     if not args.keep:
@@ -108,6 +114,8 @@ def unpack(ver_dir, files):
 args = getargs()
 logging.basicConfig(level=args.loglevel, format="%(message)s")
 
+total_processed = 0
+
 for root in args.path:
     logging.info(f"{root}")
 
@@ -117,7 +125,16 @@ for root in args.path:
         
         logging.info(f"  {os.path.relpath(path, root)}")
 
+        processed = 0
+
         if args.command == "pack":
-           pack(path, files)
+            processed = pack(path, files)
+            total_processed += processed
         elif args.command == "unpack":
-            unpack(path, files)
+            processed = unpack(path, files)
+            total_processed += processed
+
+        if processed > 0:
+            logging.info(f"    [{processed}]")
+
+logging.info(f"Processed {total_processed} total files")
