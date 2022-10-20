@@ -41,6 +41,7 @@ class BaseSpider(scrapy.Spider):
     def parse_config(self, response):
         config_data = json.loads(response.body)
         config_date = get_dh_timestamp(config_data)
+        
         self.persist_response(response, config_date, check_identical=True)
                 
         yield from self.continue_requests(config_data)
@@ -88,7 +89,7 @@ class BaseSpider(scrapy.Spider):
                 cache[filename] = max_version
 
                 filedate = datetime.datetime.fromtimestamp(mtime)
-                self.index.ensure_version_exists(filename, max_version, filedate)
+                self.index.ensure_version_exists(filename, entry_version, filedate)
             except ValueError:
                 logging.debug(f"Error: skipping version from filename: {entry}")
                 continue
@@ -104,14 +105,14 @@ class BaseSpider(scrapy.Spider):
         ver_path = os.path.join(ver_dir, filename)
 
         root, ext = os.path.splitext(filename)
-        version = cache.get(filename, 0)
+        version = cache.get(filename, 1)
 
         while True:
-            version += 1
-
             ver_path = os.path.join(ver_dir, f"{root}_{version:04}{ext}")
             if not os.path.exists(ver_path):
                 break
+
+            version += 1
     
         cache[filename] = version
         self.index.set_current_version(filename, version)

@@ -30,7 +30,7 @@
                 "_continuous=True"
             ],
             "console": "integratedTerminal",
-            "env": {"https_proxy": "localhost:8888"},
+            "env": {"__https_proxy": "localhost:8888"},
             "justMyCode": false
         }
     ]

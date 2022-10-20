@@ -115,7 +115,7 @@ class DivulgaSpider(BaseSpider):
             if self.ignore_pattern and self.ignore_pattern.match(info.filename):
                 continue
 
-            if info.filename in self.index and filedate == self.index[info.filename].index_date:
+            if info.filename in self.index and filedate <= self.index[info.filename].index_date:
                 continue
 
             dupe = info.filename in self.pending
@@ -156,22 +156,14 @@ class DivulgaSpider(BaseSpider):
 
     def parse_file(self, response, info):
         filedate = self.pending[info.filename]
-        
-        data = None
-        
-        if info.ext == "json":
-            try:
-                data = json.loads(response.body)
-                filedate = max(get_dh_timestamp(data), filedate)
-            except json.JSONDecodeError:
-                logging.warning(f"Malformed json at {info.filename}, skipping parse")
-                pass
-
         self.persist_response(response, filedate)
         self.pending.pop(info.filename, None)
 
-        if info.type == "f" and data and self.settings["DOWNLOAD_PICTURES"]:
-            yield from self.query_pictures(data, info, filedate)
+        if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
+            try:
+                yield from self.query_pictures(json.loads(response.body), info, filedate)
+            except json.JSONDecodeError:
+                logging.warning(f"Malformed json at {info.filename}, skipping parse")
 
     def errback_file(self, failure):
         logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
