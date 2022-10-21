@@ -47,7 +47,7 @@ class DivulgaSpider(BaseSpider):
 
         self.index.add_many(expand_state_index())
 
-        logging.info(f"Appended index from: {state_index_path}")
+        logging.info("Appended index from: %s", state_index_path)
 
         self.index[info.filename] = Index.Entry()
 
@@ -58,23 +58,23 @@ class DivulgaSpider(BaseSpider):
 
         target_path = self.get_local_path(info.path, info.no_cycle)
         if not os.path.exists(target_path):
-            logging.debug(f"Target path not found, skipping index {info.filename}")
+            logging.debug("Target path not found, skipping index %s", info.filename)
             return False
 
         modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(target_path))
         if entry.index_date != modified_time:
-            logging.debug(f"Index date mismatch, skipping index {info.filename} {modified_time} > {entry.index_date}")
+            logging.debug("Index date mismatch, skipping index %s %s > %s", info.filename, modified_time, entry.index_date)
             return False
 
         return True
 
     def validate_index(self):
-        logging.info(f"Validating index...")
+        logging.info("Validating index...")
 
         invalid = [f for f, e in self.index.items() if not self.validate_index_entry(f, e)]
         if len(invalid) > 0:
             self.index.remove_many(invalid)
-            logging.info(f"Removed {len(invalid)} invalid index entries")
+            logging.info("Removed %d invalid index entries", len(invalid))
 
     def load_index(self):
         for state_index_path in glob.glob(f"{self.get_local_path('')}/[0-9]*/config/[a-z][a-z]/*.json", recursive=True):
@@ -82,14 +82,14 @@ class DivulgaSpider(BaseSpider):
 
         self.validate_index()
 
-        logging.info(f"Index size {len(self.index)}")
+        logging.info("Index size %d", len(self.index))
 
     def continue_requests(self, config_data):
         self.load_index()
         self.pending = dict()
 
         for election in self.elections:
-            logging.info(f"Queueing election: {election}")
+            logging.info("Queueing election: %s", election)
             yield from self.generate_requests_index(election)
 
     def closed(self, reason):
@@ -97,7 +97,7 @@ class DivulgaSpider(BaseSpider):
 
     def generate_requests_index(self, election):
         for state in self.states:
-            logging.debug(f"Queueing index file for {election}-{state}")
+            logging.debug("Queueing index file for %s-%s", election, state)
             path = PathInfo.get_state_index_path(election, state)
             yield scrapy.Request(self.get_full_url(path), self.parse_index, errback=self.errback_index,
                 dont_filter=True, priority=4, cb_kwargs={"election": election, "state":state})
@@ -124,7 +124,7 @@ class DivulgaSpider(BaseSpider):
             self.pending[info.filename] = filedate
 
             if dupe:
-                logging.debug(f"Skipping pending duplicated query {info.filename}")
+                logging.debug("Skipping pending duplicated query %s", info.filename)
                 continue
 
             added += 1
@@ -136,23 +136,23 @@ class DivulgaSpider(BaseSpider):
             elif info.type == "v" or info.ext == "sig":
                 priority = 0
 
-            logging.debug(f"Queueing file {info.filename} [{self.index.get(info.filename).index_date} > {filedate}]")
+            logging.debug("Queueing file {%s} [{%s} > {%s}]", info.filename, self.index.get(info.filename).index_date, filedate)
 
             yield scrapy.Request(self.get_full_url(info.path), self.parse_file, errback=self.errback_file, priority=priority,
                 dont_filter=True, cb_kwargs={"info": info})
 
         if added > 0 or response.request.meta.get("reindex_count", 0) == 0:
-            logging.info(f"Parsed index for {election}-{state}, size {size}, added {added}, total pending {len(self.pending)}")
+            logging.info("Parsed index for %s-%s, size %d, added %d, total pending {len(self.pending)}", election, state, size, added)
 
         if self.continuous and self.crawler.crawling:
             reindex_request = defer_request(60.0, response.request)
             reindex_request.priority = 1
             reindex_request.meta["reindex_count"] = reindex_request.meta.get("reindex_count", 0) + 1
-            logging.debug(f"Queueing re-indexing of {election}-{state}, count: {reindex_request.meta['reindex_count']}")
+            logging.debug("Queueing re-indexing of %s-%s, count: %d", election, state, reindex_request.meta['reindex_count'])
             yield reindex_request
 
     def errback_index(self, failure):
-        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+        logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def parse_file(self, response, info):
         filedate = self.pending[info.filename]
@@ -163,10 +163,10 @@ class DivulgaSpider(BaseSpider):
             try:
                 yield from self.query_pictures(json.loads(response.body), info, filedate)
             except json.JSONDecodeError:
-                logging.warning(f"Malformed json at {info.filename}, skipping parse")
+                logging.warning("Malformed json at %s, skipping parse", info.filename)
 
     def errback_file(self, failure):
-        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+        logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
         self.pending.pop(failure.request.cb_kwargs["info"].filename, None)
 
     def query_pictures(self, data, info, filedate):
@@ -186,14 +186,14 @@ class DivulgaSpider(BaseSpider):
             if not os.path.exists(target_path):
                 self.pending[filename] = None
                 added += 1
-                logging.debug(f"Queueing picture {filename}")
+                logging.debug("Queueing picture %s", filename)
                 yield scrapy.Request(self.get_full_url(path), self.parse_picture, priority=1,
                     dont_filter=True, cb_kwargs={"filename": filename, "filedate": filedate})
             else:
                 self.update_file_timestamp(target_path, filedate)
 
         if added > 0:
-            logging.info(f"Added pictures {added}, total pending {len(self.pending)}")
+            logging.info("Added pictures %d, total pending %d", added, len(self.pending))
 
     def parse_picture(self, response, filename, filedate):
         self.persist_response(response, filedate)

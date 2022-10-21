@@ -55,16 +55,16 @@ def pack(ver_dir, files):
         shutil.copyfile(zip_path, backup_path)
 
     try:
-        logging.debug(f"    @ _pack.zip")
+        logging.debug("    @ _pack.zip")
         with zipfile.ZipFile(zip_path, "a", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zip:
             zipped_files = set(zip_root_files(zip))
             
             for file in zippable_files:
                 if file in zipped_files:
                     zip.remove(file)
-                    logging.debug(f"      - {file}")
+                    logging.debug("      - %s", file)
                 
-                logging.debug(f"      + {file}")
+                logging.debug("      + %s", file)
                 zip.write(os.path.join(ver_dir, file), file)
     except Exception as e:
         if os.path.exists(backup_path):
@@ -77,7 +77,7 @@ def pack(ver_dir, files):
 
     if not args.keep:
         for file in zippable_files:
-            logging.debug(f"    - {file}")
+            logging.debug("    - %s", file)
             os.remove(os.path.join(ver_dir, file))
 
     return len(zippable_files)
@@ -90,12 +90,12 @@ def unpack(ver_dir, files):
         return
 
     for zip_file in zip_files:
-        logging.debug(f"    @ {zip_file}")
+        logging.debug("    @ %s", zip_file)
         zip_path = os.path.join(ver_dir, zip_file)
 
         with zipfile.ZipFile(zip_path, "r") as zip:
             for zipinfo in zip.infolist():
-                logging.debug(f"    + {zipinfo.filename}")
+                logging.debug("    + %s", zipinfo.filename)
                 zip.extract(zipinfo, ver_dir)
                 
                 # Restore original mod time
@@ -108,7 +108,7 @@ def unpack(ver_dir, files):
             
     if not args.keep:
         for zip_file in zip_files:
-            logging.debug(f"    - {zip_file}")
+            logging.debug("    - %s", zip_file)
             os.remove(os.path.join(ver_dir, zip_file))
 
 args = getargs()
@@ -117,13 +117,13 @@ logging.basicConfig(level=args.loglevel, format="%(message)s")
 total_processed = 0
 
 for root in args.path:
-    logging.info(f"{root}")
+    logging.info(root)
 
     for path, dirs, files in os.walk(root):
         if os.path.basename(path) != ".ver":
             continue
         
-        logging.info(f"  {os.path.relpath(path, root)}")
+        logging.info("  %s", os.path.relpath(path, root))
 
         processed = 0
 
@@ -135,6 +135,6 @@ for root in args.path:
             total_processed += processed
 
         if processed > 0:
-            logging.info(f"    [{processed}]")
+            logging.info("    [%d]", processed)
 
-logging.info(f"Processed {total_processed} total files")
+logging.info("Processed %d total files", total_processed)

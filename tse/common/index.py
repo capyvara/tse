@@ -46,7 +46,7 @@ class Index():
             ))
 
         if persist_path:
-            logging.info(f"Index persist path: {persist_path}")
+            logging.info("Index persist path: %s",  persist_path)
 
     def close(self):
         if self.con:

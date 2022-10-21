@@ -91,7 +91,7 @@ class BaseSpider(scrapy.Spider):
                 filedate = datetime.datetime.fromtimestamp(mtime)
                 self.index.ensure_version_exists(filename, entry_version, filedate)
             except ValueError:
-                logging.debug(f"Error: skipping version from filename: {entry}")
+                logging.debug("Error: skipping version from filename: %s", entry)
                 continue
 
         self._version_path_cache[dirname] = cache
@@ -205,13 +205,13 @@ class BaseSpider(scrapy.Spider):
         return self.settings["KEEP_OLD_VERSIONS"]
 
     def initialize(self):
-        logging.info(f"Host: {self.settings['HOST']}")
-        logging.info(f"Environment: {self.settings['ENVIRONMENT']}")
-        logging.info(f"Cycle: {self.settings['CYCLE']}")
+        logging.info("Host: %s", self.settings["HOST"])
+        logging.info("Environment: %s", self.settings["ENVIRONMENT"])
+        logging.info("Cycle: %s", self.settings["CYCLE"])
         
-        logging.info(f"Plea: {self.plea}")
-        logging.info(f"Elections: {self.elections}")
-        logging.info(f"States: {self.states}")
+        logging.info("Plea: %s", self.plea)
+        logging.info("Elections: %s", self.elections)
+        logging.info("States: %s", self.states)
 
         os.makedirs(self.get_local_path(""), exist_ok=True)
         self.index = Index(self.get_local_path(f"index_{self.name}.db", no_cycle=True))

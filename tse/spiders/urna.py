@@ -54,10 +54,10 @@ class UrnaSpider(BaseSpider):
         self.match_sigfile_filedate(self.get_local_path(source_path))
 
     def errback_sigfile(self, failure):
-        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+        logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def load_index(self):
-        logging.info(f"Index size {len(self.index)}")
+        logging.info("Index size %d", len(self.index))
 
     def continue_requests(self, config_data):
         # Allows us to stop in the middle of start_requests
@@ -80,7 +80,7 @@ class UrnaSpider(BaseSpider):
             path = PathInfo.get_sections_config_path(self.plea, state)
 
             try:
-                logging.info(f"Reading sections config file for {self.plea} {state}")
+                logging.info("Reading sections config file for %s %s", self.plea, state)
                 local_path = self.get_local_path(path)
                 config_data = self.load_json(local_path)
                 
@@ -93,7 +93,7 @@ class UrnaSpider(BaseSpider):
 
                 yield from self.query_sections(state, config_data)                
             except (FileNotFoundError, json.JSONDecodeError):
-                logging.info(f"Queueing sections config file for {self.plea} {state}")
+                logging.info("Queueing sections config file for %s %s", self.plea, state)
                 yield scrapy.Request(self.get_full_url(path), self.parse_section_config, errback=self.errback_section_config,
                     dont_filter=True, priority=4, cb_kwargs={"state": state})
 
@@ -110,7 +110,7 @@ class UrnaSpider(BaseSpider):
         yield from self.query_sections(state, data)
 
     def errback_section_config(self, failure):
-        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+        logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def query_sections(self, state, data):
         size = 0
@@ -125,7 +125,7 @@ class UrnaSpider(BaseSpider):
             size += 1
 
             try:
-                logging.debug(f"Reading section file {filename}")
+                logging.debug("Reading section file %s", filename)
                 local_path = self.get_local_path(path)
                 aux_data = self.load_json(local_path)
 
@@ -137,12 +137,12 @@ class UrnaSpider(BaseSpider):
 
                 yield from self.download_ballot_box_files(state, city, zone, section, aux_data)
             except (FileNotFoundError, json.JSONDecodeError):
-                logging.debug(f"Queueing section file {filename}")
+                logging.debug("Queueing section file %s", filename)
                 queued += 1
                 yield scrapy.Request(self.get_full_url(path), self.parse_section, errback=self.errback_section,
                     dont_filter=True, priority=2, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
 
-        logging.info(f"Queued {state} {queued} section files of {size}")
+        logging.info("Queued %s %d section files of %d", state, queued, size)
 
     def parse_section(self, response, state, city, zone, section):
         data = json.loads(response.body)
@@ -153,10 +153,10 @@ class UrnaSpider(BaseSpider):
 
     def errback_section(self, failure):
         if failure.check(HttpError) and failure.value.response.status == 403:
-            logging.debug(f"Section config not found {str(failure.request)}")
+            logging.debug("Section config not found %s", str(failure.request))
             return
 
-        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+        logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def download_ballot_box_files(self, state, city, zone, section, data):
         hash, hashdate, filenames = SectionAuxParser.get_files(data)
@@ -171,7 +171,7 @@ class UrnaSpider(BaseSpider):
             local_path = self.get_local_path(path)
 
             if not os.path.exists(local_path):
-                logging.debug(f"Queueing ballot box file {filename}")
+                logging.debug("Queueing ballot box file %s", filename)
                 yield scrapy.Request(self.get_full_url(path), self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
                     dont_filter=True, priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section, "hashdate": hashdate})
             else:
@@ -181,4 +181,4 @@ class UrnaSpider(BaseSpider):
         self.persist_response(response, hashdate)
 
     def errback_ballot_box_file(self, failure):
-        logging.error(f"Failure downloading {str(failure.request)} - {str(failure.value)}")
+        logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
