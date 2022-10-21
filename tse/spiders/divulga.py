@@ -26,6 +26,9 @@ class DivulgaSpider(BaseSpider):
     custom_settings = {
         "DOWNLOADER_MIDDLEWARES": {
            'tse.middlewares.DeferMiddleware': 543,
+        },
+        "EXTENSIONS": {
+            'tse.extensions.LogStatsDivulga': 543,
         }
     }
 
