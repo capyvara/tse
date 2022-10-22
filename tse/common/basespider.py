@@ -32,7 +32,7 @@ class BaseSpider(scrapy.Spider):
         yield from self.query_common()
 
     def query_common(self):
-        yield scrapy.Request(self.get_full_url(PathInfo.get_election_config_path(), no_cycle=True), self.parse_config, dont_filter=True)
+        yield self.make_request(PathInfo.get_election_config_path(), self.parse_config)
 
     def load_json(self, path):
         with open(path, "r") as f:
@@ -46,11 +46,11 @@ class BaseSpider(scrapy.Spider):
                 
         yield from self.continue_requests(config_data)
 
-    def get_local_path(self, path, no_cycle=False):
-        return PathInfo.get_local_path(self.settings, path, no_cycle)
+    def get_local_path(self, path):
+        return PathInfo.get_local_path(self.settings, path)
 
-    def get_full_url(self, path, no_cycle=False):
-        return PathInfo.get_full_url(self.settings, path, no_cycle)
+    def get_full_url(self, path):
+        return PathInfo.get_full_url(self.settings, path)
 
     def _scan_version_directory(self, ver_dir):
         with os.scandir(ver_dir) as it:
@@ -155,8 +155,7 @@ class BaseSpider(scrapy.Spider):
         return scrapy.Request(self.get_full_url(path), *args, **kwargs)
 
     def persist_response(self, response, filedate=None, check_identical=False):
-        url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
-        target_path = os.path.join(self.settings["FILES_STORE"], url_path)
+        target_path = os.path.join(self.settings["FILES_STORE"], urllib.parse.urlparse(response.url).path.strip("/"))
         target_dir = os.path.dirname(target_path)
         os.makedirs(target_dir, exist_ok=True)
 
@@ -227,5 +226,6 @@ class BaseSpider(scrapy.Spider):
         logging.info("Elections: %s", self.elections)
         logging.info("States: %s", self.states)
 
-        os.makedirs(self.get_local_path(""), exist_ok=True)
-        self.index = Index(self.get_local_path(f"index_{self.name}.db", no_cycle=True))
+        db_dir = os.path.join(self.settings["FILES_STORE"], self.settings["ENVIRONMENT"])
+        os.makedirs(db_dir, exist_ok=True)
+        self.index = Index(os.path.join(db_dir, f"index_{self.name}.db"))

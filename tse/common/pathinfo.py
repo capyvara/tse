@@ -25,14 +25,12 @@ class PathInfo:
         self.ver = None
         self.type = None
         self.ext = None
-        self.no_cycle = False
         self.id_ballot_box = None
         self.timestamp = None
         self.seq = None
 
         if filename == "ele-c.json":
             self.path = f"comum/config/{filename}"
-            self.no_cycle = True
             self.type = "c"
             self.ext = "json"
             return
@@ -105,15 +103,15 @@ class PathInfo:
         raise ValueError("Filename format not recognized")
 
     @staticmethod
-    def get_local_path(settings, path, no_cycle=False):
-        if no_cycle:
+    def get_local_path(settings, path):
+        if path.startswith("comum/"):
             return os.path.join(settings["FILES_STORE"], settings["ENVIRONMENT"], path)
 
         return os.path.join(settings["FILES_STORE"], settings["ENVIRONMENT"], settings["CYCLE"], path)
 
     @staticmethod
-    def get_full_url(settings, path, no_cycle=False):
-        if no_cycle:
+    def get_full_url(settings, path):
+        if path.startswith("comum/"):
             return os.path.join(f"{settings['HOST']}/{settings['ENVIRONMENT']}", path)
 
         return os.path.join(f"{settings['HOST']}/{settings['ENVIRONMENT']}/{settings['CYCLE']}", path)

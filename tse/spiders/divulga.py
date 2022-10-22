@@ -61,7 +61,7 @@ class DivulgaSpider(BaseSpider):
         if not info.path or info.type == "i":
             return True
 
-        target_path = self.get_local_path(info.path, info.no_cycle)
+        target_path = self.get_local_path(info.path)
         if not os.path.exists(target_path):
             logging.debug("Target path not found, skipping index %s", info.filename)
             return False
