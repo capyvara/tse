@@ -12,7 +12,7 @@ from tse.common.basespider import BaseSpider
 from tse.common.index import Index
 from tse.common.pathinfo import PathInfo
 from tse.middlewares import defer_request
-from tse.parsers import FixedParser, IndexParser, get_dh_timestamp
+from tse.parsers import FixedParser, IndexParser
 
 
 class DivulgaSpider(BaseSpider):
@@ -61,12 +61,12 @@ class DivulgaSpider(BaseSpider):
         if not info.path or info.type == "i":
             return True
 
-        target_path = self.get_local_path(info.path)
-        if not os.path.exists(target_path):
-            logging.debug("Target path not found, skipping index %s", info.filename)
+        local_path = self.get_local_path(info.path)
+        if not os.path.exists(local_path):
+            logging.debug("Local path not found, skipping index %s", info.filename)
             return False
 
-        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(target_path))
+        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_path))
         if entry.index_date != modified_time:
             logging.debug("Index date mismatch, skipping index %s %s > %s", info.filename, modified_time, entry.index_date)
             return False
@@ -82,10 +82,10 @@ class DivulgaSpider(BaseSpider):
             logging.info("Removed %d invalid index entries", len(invalid))
 
     def load_index(self):
-        for state_index_path in glob.glob(f"{self.get_local_path('')}/[0-9]*/config/[a-z][a-z]/*.json", recursive=True):
-            self.append_state_index(state_index_path)
+        # for state_index_path in glob.glob(f"{self.get_local_path('')}/[0-9]*/config/[a-z][a-z]/*.json", recursive=True):
+        #     self.append_state_index(state_index_path)
 
-        self.validate_index()
+        # self.validate_index()
 
         logging.info("Index size %d", len(self.index))
 
@@ -120,7 +120,7 @@ class DivulgaSpider(BaseSpider):
                 cb_kwargs={"election": election, "state":state})
 
     def parse_index(self, response, election, state):
-        self.persist_response(response, check_identical=True)
+        result = self.persist_response(response)
 
         if not self.crawler.crawling:
             return
@@ -130,14 +130,14 @@ class DivulgaSpider(BaseSpider):
 
         transferring = self.crawler.engine.downloader.slots[response.meta["download_slot"]].transferring
 
-        data = json.loads(response.body)
-        for info, filedate in IndexParser.expand(state, data):
+        data = json.loads(result.body)
+        for info, index_date in IndexParser.expand(state, data):
             size += 1
 
             if self.ignore_pattern and self.ignore_pattern.match(info.filename):
                 continue
 
-            if info.filename in self.index and filedate <= self.index[info.filename].index_date:
+            if info.filename in self.index and index_date <= self.index[info.filename].index_date:
                 continue
 
             def find_req(r):
@@ -146,18 +146,18 @@ class DivulgaSpider(BaseSpider):
             if info.filename in self.pending:
                 # There may be some time between the enqueue of the request and the actual http get
                 # So if it isn't sent yet and a newer date is available use that instead
-                if filedate > self.pending[info.filename]:
+                if index_date > self.pending[info.filename]:
                     in_transfer = next(filter(find_req, transferring), None)
                     if in_transfer == None:
-                        self.pending[info.filename] = filedate
-                        logging.debug("Bumped date for %s to %s > %s", info.filename, self.pending[info.filename], filedate)
+                        self.pending[info.filename] = index_date
+                        logging.debug("Bumped date for %s to %s > %s", info.filename, self.pending[info.filename], index_date)
                         self.crawler.stats.inc_value("divulga/bumped")
                 
-                logging.debug("Skipping dupe %s %s > %s", info.filename, self.pending[info.filename], filedate)
+                logging.debug("Skipping dupe %s %s > %s", info.filename, self.pending[info.filename], index_date)
                 self.crawler.stats.inc_value("divulga/dupes")
                 continue
 
-            self.pending[info.filename] = filedate
+            self.pending[info.filename] = index_date
 
             added += 1
 
@@ -168,7 +168,7 @@ class DivulgaSpider(BaseSpider):
             elif info.type == "v" or info.ext == "sig":
                 priority = 0
 
-            logging.debug("Queueing file %s [%s > %s]", info.filename, self.index.get(info.filename).index_date, filedate)
+            logging.debug("Queueing file %s [%s > %s]", info.filename, self.index.get(info.filename).index_date, index_date)
 
             yield self.make_request(info.path, self.parse_file, errback=self.errback_file, priority=priority,
                 cb_kwargs={"info": info})
@@ -188,8 +188,8 @@ class DivulgaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def parse_file(self, response, info):
-        filedate = self.pending[info.filename]
-        self.persist_response(response, filedate, check_identical=False)
+        index_date = self.pending[info.filename]
+        result = self.persist_response(response, index_date)
         self.pending.pop(info.filename, None)
 
         if not self.crawler.crawling:
@@ -197,7 +197,7 @@ class DivulgaSpider(BaseSpider):
 
         if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
             try:
-                yield from self.query_pictures(json.loads(response.body), info, filedate)
+                yield from self.query_pictures(json.loads(result.body), info, index_date)
             except json.JSONDecodeError:
                 logging.warning("Malformed json at %s, skipping parse", info.filename)
 
@@ -205,7 +205,7 @@ class DivulgaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
         self.pending.pop(failure.request.cb_kwargs["info"].filename, None)
 
-    def query_pictures(self, data, info, filedate):
+    def query_pictures(self, data, info, index_date):
         added = 0
 
         for cand in FixedParser.expand_candidates(data):
@@ -218,19 +218,19 @@ class DivulgaSpider(BaseSpider):
             if filename in self.pending:
                 continue
 
-            target_path = self.get_local_path(path)
-            if not os.path.exists(target_path):
+            local_path = self.get_local_path(path)
+            if not os.path.exists(local_path):
                 self.pending[filename] = None
                 added += 1
                 logging.debug("Queueing picture %s", filename)
                 yield self.make_request(path, self.parse_picture, priority=1, 
-                    cb_kwargs={"filename": filename, "filedate": filedate})
+                    cb_kwargs={"filename": filename, "index_date": index_date})
             else:
-                self.update_file_timestamp(target_path, filedate)
+                self.update_file_timestamp(local_path, index_date)
 
         if added > 0:
             logging.info("Added pictures %d, total pending %d", added, len(self.pending))
 
-    def parse_picture(self, response, filename, filedate):
-        self.persist_response(response, filedate)
+    def parse_picture(self, response, filename, index_date):
+        self.persist_response(response, index_date)
         self.pending.pop(filename, None)

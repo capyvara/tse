@@ -1,5 +1,4 @@
 import datetime
-import filecmp
 import json
 import logging
 import os
@@ -10,11 +9,11 @@ import zipfile
 from email.utils import parsedate_to_datetime, format_datetime
 
 import scrapy
+from twisted.web.client import ResponseFailed
 from scrapy.utils.python import to_unicode
 
 from tse.common.index import Index
 from tse.common.pathinfo import PathInfo
-from tse.parsers import get_dh_timestamp
 
 
 class BaseSpider(scrapy.Spider):
@@ -39,11 +38,8 @@ class BaseSpider(scrapy.Spider):
             return json.load(f)
 
     def parse_config(self, response):
-        config_data = json.loads(response.body)
-        config_date = get_dh_timestamp(config_data)
-        
-        self.persist_response(response, config_date, check_identical=True)
-                
+        result = self.persist_response(response)
+        config_data = json.loads(result.body)
         yield from self.continue_requests(config_data)
 
     def get_local_path(self, path):
@@ -141,61 +137,73 @@ class BaseSpider(scrapy.Spider):
             self.index[filename] = Index.Entry(filedate, old_entry.last_modified, old_entry.etag)
 
     def make_request(self, path: str, *args, **kwargs):
-        kwargs["dont_filter"] = kwargs.get("dont_filter", True)
-        
-        headers = kwargs.get("headers", {})
-        
-        entry = self.index.get(os.path.basename(path))
-        if entry.last_modified != None:
-            headers[b"If-Modified-Since"] = format_datetime(entry.last_modified.replace(tzinfo=datetime.timezone.utc), True)
-        if entry.etag != None:
-            headers[b"ETag"] = f'"{entry.etag}"'
+        self.update_current_version(self.get_local_path(path))
 
-        kwargs["headers"] = headers
+        entry = self.index.get(os.path.basename(path))
+        if entry.has_http_cache and os.path.exists(self.get_local_path(path)):
+            headers = kwargs.setdefault("headers", {})
+
+            if entry.last_modified != None:
+                headers[b"If-Modified-Since"] = format_datetime(entry.last_modified.replace(tzinfo=datetime.timezone.utc), True)
+            if entry.etag != None:
+                headers[b"ETag"] = f'"{entry.etag}"'
+
+            meta = kwargs.setdefault("meta", {})
+            meta.update({"handle_httpstatus_list": [304]})
+
+        kwargs.setdefault("dont_filter", True)
         return scrapy.Request(self.get_full_url(path), *args, **kwargs)
 
-    def persist_response(self, response, filedate=None, check_identical=False):
-        target_path = os.path.join(self.settings["FILES_STORE"], urllib.parse.urlparse(response.url).path.strip("/"))
-        target_dir = os.path.dirname(target_path)
-        os.makedirs(target_dir, exist_ok=True)
+    class PersistedResult:
+        def __init__(self, target_path, index_entry, body = None):
+            self.target_path = target_path
+            self.index_entry = index_entry
+            self._body = body
 
-        target_basename = os.path.basename(target_path)
-        _, current_version_path = self.update_current_version(target_path)
+        @property
+        def body(self) -> str:
+            if self._body: 
+                return self._body
 
-        # TODO: Select patterns to keep old versions
+            with open(self.target_path, "r") as f:
+                return f.read()
 
-        if self.keep_old_versions:
-            tmp_path = os.path.join(target_dir, f".tmp_{os.path.basename(target_path)}")
-            try:
-                with open(tmp_path, "wb") as f:
-                    f.write(response.body)
+    def persist_response(self, response, index_date=None, check_identical = True) -> PersistedResult:
+        local_path = os.path.join(self.settings["FILES_STORE"], urllib.parse.urlparse(response.url).path.strip("/"))
+        filename = os.path.basename(local_path)
 
-                if os.path.exists(target_path):
-                    if check_identical and filecmp.cmp(tmp_path, target_path, shallow=False):
-                        os.remove(tmp_path)
-                    else:
-                        os.makedirs(os.path.dirname(current_version_path), exist_ok=True)
-                        os.rename(target_path, current_version_path)
-                        os.rename(tmp_path, target_path)
-                        self.update_current_version(target_path)
-                else:
-                    os.rename(tmp_path, target_path)
-                
-            except:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-        else:
-            with open(target_dir, "wb") as f:
-                f.write(response.body)
+        _, current_version_path = self.update_current_version(local_path)
 
         last_modified, etag = self.get_http_cache_headers(response)
-        self.index[target_basename] = Index.Entry(filedate, last_modified, etag)
-            
-        if filedate:
-            dt_epoch = filedate.timestamp()
-            os.utime(target_path, (dt_epoch, dt_epoch))
+        index_entry = self.index.get(filename)
 
-        return target_path
+        if response.status == 304:
+            if index_entry.last_modified == last_modified and index_entry.etag == etag and os.path.exists(local_path):
+                return self.PersistedResult(local_path, index_entry)
+            else:
+                # TODO invalidate/retry
+                # os.remove(target_path)
+                raise ResponseFailed(response)
+
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+        if self.keep_old_versions and os.path.exists(local_path):
+            os.makedirs(os.path.dirname(current_version_path), exist_ok=True)
+            os.rename(local_path, current_version_path)
+            self.update_current_version(local_path)
+
+        with open(local_path, "wb") as f:
+            f.write(response.body)
+
+        index_entry = Index.Entry(index_date, last_modified, etag)
+        self.index[filename] = index_entry
+            
+        # TODO: Set to last modified?
+        if index_date:
+            dt_epoch = index_date.timestamp()
+            os.utime(local_path, (dt_epoch, dt_epoch))
+
+        return self.PersistedResult(local_path, index_entry, response.body)
 
     @property
     def plea(self):

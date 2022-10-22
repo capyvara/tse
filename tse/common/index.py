@@ -11,6 +11,10 @@ class Index():
         last_modified: datetime.datetime = None
         etag: str = None
 
+        @property
+        def has_http_cache(self):
+            return self.last_modified or self.etag
+
     def __init__(self, persist_path=None):
         self.con = sqlite3.connect(persist_path if persist_path else ":memory:", 
             detect_types=sqlite3.PARSE_DECLTYPES)
