@@ -21,7 +21,6 @@ class BaseSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._version_path_cache = {}
 
     def continue_requests(self, config_data, config_entry):
         raise NotImplementedError(f'{self.__class__.__name__}.parse callback is not defined')
@@ -48,72 +47,21 @@ class BaseSpider(scrapy.Spider):
     def get_full_url(self, path):
         return PathInfo.get_full_url(self.settings, path)
 
-    def _scan_version_directory(self, ver_dir):
-        with os.scandir(ver_dir) as it:
-            for entry in it:
-                if not entry.is_file() or entry.name.startswith('.'): 
-                    continue
-
-                if os.path.splitext(entry.name)[1] == ".zip":
-                    with zipfile.ZipFile(entry.path, "r") as zip:
-                        for info in zip.infolist():
-                            if not info.is_dir() and not "/" in info.filename:
-                                yield (info.filename, time.mktime(info.date_time + (0, 0, -1)))
-                    continue
-
-                yield (entry.name, entry.stat().st_mtime)
-
-    def _get_version_path_cache(self, dirname):
-        if dirname in self._version_path_cache:
-            return self._version_path_cache[dirname]
-
-        cache = {}
-
-        ver_dir = os.path.join(dirname, ".ver")
-        if not os.path.exists(ver_dir):
-            self._version_path_cache[dirname] = cache
-            return cache
-
-        for entry, mtime in self._scan_version_directory(ver_dir):            
-            entry_root, entry_ext = os.path.splitext(entry)
-
-            try:
-                idx = entry_root.rindex("_")
-                entry_version = int(entry_root[idx + 1:])
-                filename = f"{entry_root[:idx]}{entry_ext}"
-                max_version = max(entry_version, cache.get(filename, 0))
-                cache[filename] = max_version
-
-                filedate = datetime.datetime.fromtimestamp(mtime)
-                self.index.ensure_version_exists(filename, entry_version, filedate)
-            except ValueError:
-                logging.debug("Error: skipping version from filename: %s", entry)
-                continue
-
-        self._version_path_cache[dirname] = cache
-        return cache
-
-    def update_current_version(self, path):
+    def archive_version(self, path):
         dirname, filename = os.path.split(path)
-        cache = self._get_version_path_cache(dirname)
-
+        index_version = self.index.get_current_version(filename)
+        if index_version == 0 or not os.path.exists(path):
+            return 0
+        
         ver_dir = os.path.join(dirname, ".ver")
-        ver_path = os.path.join(ver_dir, filename)
-
         root, ext = os.path.splitext(filename)
-        version = cache.get(filename, 1)
+        ver_path = os.path.join(ver_dir, f"{root}_{index_version:04}{ext}")
 
-        while True:
-            ver_path = os.path.join(ver_dir, f"{root}_{version:04}{ext}")
-            if not os.path.exists(ver_path):
-                break
+        os.makedirs(ver_dir, exist_ok=True)
+        os.rename(path, ver_path)
 
-            version += 1
-    
-        cache[filename] = version
-        self.index.set_current_version(filename, version)
-        return (version, ver_path)
-
+        return index_version
+        
     def _rfc2822_to_datetime(self, date_str):
         try:
             date_str = to_unicode(date_str, encoding='ascii')
@@ -126,6 +74,7 @@ class BaseSpider(scrapy.Spider):
         etag = to_unicode(response.headers[b"etag"]).strip('"')
         return (last_modified, etag)
 
+    # TODO: Move to urna
     def update_file_timestamp(self, target_path, filedate):
         dt_epoch = filedate.timestamp()
         if os.path.getmtime(target_path) != dt_epoch:
@@ -134,11 +83,9 @@ class BaseSpider(scrapy.Spider):
         filename = os.path.basename(target_path)            
         old_entry = self.index.get(filename)
         if old_entry.index_date != filedate:
-            self.index[filename] = Index.Entry(filedate, old_entry.last_modified, old_entry.etag)
+            self.index[filename] = Index.Entry(old_entry.last_modified, old_entry.etag, filedate)
 
     def make_request(self, path: str, *args, **kwargs):
-        self.update_current_version(self.get_local_path(path))
-
         entry = self.index.get(os.path.basename(path))
         if entry.has_http_cache and os.path.exists(self.get_local_path(path)):
             headers = kwargs.setdefault("headers", {})
@@ -168,40 +115,39 @@ class BaseSpider(scrapy.Spider):
             with open(self.target_path, "r") as f:
                 return f.read()
 
-    def persist_response(self, response, index_date=None, check_identical = True) -> PersistedResult:
+    def persist_response(self, response, index_date = None, check_identical = True) -> PersistedResult:
         local_path = os.path.join(self.settings["FILES_STORE"], urllib.parse.urlparse(response.url).path.strip("/"))
         filename = os.path.basename(local_path)
-
-        _, current_version_path = self.update_current_version(local_path)
 
         last_modified, etag = self.get_http_cache_headers(response)
         index_entry = self.index.get(filename)
 
         if response.status == 304:
-            if index_entry.last_modified == last_modified and index_entry.etag == etag and os.path.exists(local_path):
+            if (index_entry.has_http_cache and 
+                    (index_entry.last_modified == last_modified) and 
+                    (index_entry.etag == etag) and 
+                    os.path.exists(local_path)):
                 return self.PersistedResult(local_path, index_entry)
             else:
                 # TODO invalidate/retry
                 # os.remove(target_path)
                 raise ResponseFailed(response)
 
+        index_entry = Index.Entry(last_modified, etag, index_date)
+
+        if self.keep_old_versions:
+            index_version = self.archive_version(filename)
+            if index_version != 0:
+                self.index.add_version(filename, index_version + 1, index_entry)
+
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
-
-        if self.keep_old_versions and os.path.exists(local_path):
-            os.makedirs(os.path.dirname(current_version_path), exist_ok=True)
-            os.rename(local_path, current_version_path)
-            self.update_current_version(local_path)
-
         with open(local_path, "wb") as f:
             f.write(response.body)
 
-        index_entry = Index.Entry(index_date, last_modified, etag)
         self.index[filename] = index_entry
             
-        # TODO: Set to last modified?
-        if index_date:
-            dt_epoch = index_date.timestamp()
-            os.utime(local_path, (dt_epoch, dt_epoch))
+        dt_epoch = last_modified.timestamp()
+        os.utime(local_path, (dt_epoch, dt_epoch))
 
         return self.PersistedResult(local_path, index_entry, response.body)
 
@@ -237,3 +183,33 @@ class BaseSpider(scrapy.Spider):
         db_dir = os.path.join(self.settings["FILES_STORE"], self.settings["ENVIRONMENT"])
         os.makedirs(db_dir, exist_ok=True)
         self.index = Index(os.path.join(db_dir, f"index_{self.name}.db"))
+
+        self.validate_index()
+
+        logging.info("Index size %d", len(self.index))
+
+    def validate_index_entry(self, filename, entry: Index.Entry):
+        info = PathInfo(filename)
+        if not info.path:
+            return True
+
+        local_path = self.get_local_path(info.path)
+        if not os.path.exists(local_path):
+            logging.debug("Local path not found, skipping index %s", info.filename)
+            return False
+
+        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_path))
+        if entry.last_modified != modified_time:
+            logging.debug("Modified date mismatch, skipping index %s %s > %s", info.filename, modified_time, entry.index_date)
+            return False
+
+        return True
+
+    def validate_index(self):
+        logging.info("Validating index...")
+
+        invalid = [f for f, e in self.index.items() if not self.validate_index_entry(f, e)]
+        if len(invalid) > 0:
+            self.index.remove_many(invalid)
+            logging.info("Removed %d invalid index entries", len(invalid))
+

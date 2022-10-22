@@ -38,62 +38,10 @@ class DivulgaSpider(BaseSpider):
         super().__init__(*args, **kwargs)
         self.continuous = continuous
 
-    def append_state_index(self, state_index_path):
-        info = PathInfo(os.path.basename(state_index_path))
-        if info.filename in self.index:
-            return
-
-        state_index_data = self.load_json(state_index_path)
-
-        def expand_state_index():
-            for f, d in IndexParser.expand(info.state, state_index_data): 
-                self.update_current_version(self.get_local_path(f.path))
-                yield (f.filename, Index.Entry(d))
-
-        self.index.add_many(expand_state_index())
-
-        logging.info("Appended index from: %s", state_index_path)
-
-        self.index[info.filename] = Index.Entry()
-
-    def validate_index_entry(self, filename, entry: Index.Entry):
-        info = PathInfo(filename)
-        if not info.path or info.type == "i":
-            return True
-
-        local_path = self.get_local_path(info.path)
-        if not os.path.exists(local_path):
-            logging.debug("Local path not found, skipping index %s", info.filename)
-            return False
-
-        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_path))
-        if entry.index_date != modified_time:
-            logging.debug("Index date mismatch, skipping index %s %s > %s", info.filename, modified_time, entry.index_date)
-            return False
-
-        return True
-
-    def validate_index(self):
-        logging.info("Validating index...")
-
-        invalid = [f for f, e in self.index.items() if not self.validate_index_entry(f, e)]
-        if len(invalid) > 0:
-            self.index.remove_many(invalid)
-            logging.info("Removed %d invalid index entries", len(invalid))
-
-    def load_index(self):
-        # for state_index_path in glob.glob(f"{self.get_local_path('')}/[0-9]*/config/[a-z][a-z]/*.json", recursive=True):
-        #     self.append_state_index(state_index_path)
-
-        # self.validate_index()
-
-        logging.info("Index size %d", len(self.index))
-
     def continue_requests(self, config_data):
         self.crawler.signals.connect(self.request_reached_downloader, signals.request_reached_downloader)
         self.crawler.signals.connect(self.request_left_downloader, signals.request_left_downloader)
 
-        self.load_index()
         self.pending = dict()
         self.downloading = set()
 
@@ -131,13 +79,14 @@ class DivulgaSpider(BaseSpider):
         transferring = self.crawler.engine.downloader.slots[response.meta["download_slot"]].transferring
 
         data = json.loads(result.body)
-        for info, index_date in IndexParser.expand(state, data):
+        for info, new_index_date in IndexParser.expand(state, data):
             size += 1
 
             if self.ignore_pattern and self.ignore_pattern.match(info.filename):
                 continue
 
-            if info.filename in self.index and index_date <= self.index[info.filename].index_date:
+            index_date = self.index.get(info.filename).index_date
+            if index_date and new_index_date <= index_date:
                 continue
 
             def find_req(r):
@@ -146,18 +95,18 @@ class DivulgaSpider(BaseSpider):
             if info.filename in self.pending:
                 # There may be some time between the enqueue of the request and the actual http get
                 # So if it isn't sent yet and a newer date is available use that instead
-                if index_date > self.pending[info.filename]:
+                if new_index_date > self.pending[info.filename]:
                     in_transfer = next(filter(find_req, transferring), None)
                     if in_transfer == None:
                         self.pending[info.filename] = index_date
-                        logging.debug("Bumped date for %s to %s > %s", info.filename, self.pending[info.filename], index_date)
+                        logging.debug("Bumped date for %s to %s > %s", info.filename, self.pending[info.filename], new_index_date)
                         self.crawler.stats.inc_value("divulga/bumped")
                 
-                logging.debug("Skipping dupe %s %s > %s", info.filename, self.pending[info.filename], index_date)
+                logging.debug("Skipping dupe %s %s > %s", info.filename, self.pending[info.filename], new_index_date)
                 self.crawler.stats.inc_value("divulga/dupes")
                 continue
 
-            self.pending[info.filename] = index_date
+            self.pending[info.filename] = new_index_date
 
             added += 1
 
@@ -168,7 +117,7 @@ class DivulgaSpider(BaseSpider):
             elif info.type == "v" or info.ext == "sig":
                 priority = 0
 
-            logging.debug("Queueing file %s [%s > %s]", info.filename, self.index.get(info.filename).index_date, index_date)
+            logging.debug("Queueing file %s [%s > %s]", info.filename, index_date, new_index_date)
 
             yield self.make_request(info.path, self.parse_file, errback=self.errback_file, priority=priority,
                 cb_kwargs={"info": info})
@@ -176,7 +125,7 @@ class DivulgaSpider(BaseSpider):
         if added > 0 or response.request.meta.get("reindex_count", 0) == 0:
             logging.info("Parsed index for %s-%s, size %d, added %d, total pending %s", election, state, size, added, len(self.pending))
 
-        if self.continuous:
+        if self.continuous and not self.crawler.crawling:
             reindex_request = defer_request(60.0, response.request)
             reindex_request.priority = 1
             reindex_request.meta["reindex_count"] = reindex_request.meta.get("reindex_count", 0) + 1

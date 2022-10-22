@@ -7,9 +7,9 @@ from typing import NamedTuple, Tuple
 
 class Index():
     class Entry(NamedTuple):
-        index_date: datetime.datetime = None
         last_modified: datetime.datetime = None
         etag: str = None
+        index_date: datetime.datetime = None
 
         @property
         def has_http_cache(self):
@@ -28,9 +28,9 @@ class Index():
                 "CREATE TABLE IF NOT EXISTS file_versions ("
                 "  filename TEXT,"
                 "  version INTEGER,"
+                "  last_modified TIMESTAMP NOT NULL,"
+                "  etag TEXT NOT NULL,"
                 "  index_date TIMESTAMP,"
-                "  last_modified TIMESTAMP,"
-                "  etag TEXT,"
                 "  PRIMARY KEY(filename,version)"
                 ") WITHOUT ROWID"
             ))
@@ -45,7 +45,7 @@ class Index():
 
             self.con.execute((
                 "CREATE VIEW IF NOT EXISTS files_items AS"
-                " SELECT file_entries.filename, file_entries.version, index_date, last_modified, etag"
+                " SELECT file_entries.filename, file_entries.version, last_modified, etag, index_date"
                 " FROM file_entries NATURAL LEFT JOIN file_versions;"
             ))
 
@@ -65,7 +65,7 @@ class Index():
 
     def __getitem__(self, filename: str) -> Entry:
         row = self.con.execute((
-            "SELECT index_date, last_modified, etag FROM file_entries" 
+            "SELECT last_modified, etag, index_date FROM file_entries" 
             " NATURAL LEFT JOIN file_versions WHERE file_entries.filename = :fn"), {"fn": filename}).fetchone()
 
         if not row:
@@ -82,9 +82,9 @@ class Index():
             row = self.con.execute("SELECT version FROM file_entries WHERE filename=:fn", {"fn": filename}).fetchone()
             version = row[0] if row else 1
 
-            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :idx, :lmod, :etag)", 
+            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx)", 
                     {"fn": filename, "ver": version, 
-                    "idx": entry.index_date, "lmod": entry.last_modified, "etag": entry.etag})
+                    "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date})
 
             self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", 
                     {"fn": filename, "ver": version})
@@ -98,7 +98,7 @@ class Index():
             yield row[0]
 
     def items(self) -> Iterable[Tuple[str, Entry]]: 
-        for row in self.con.execute(("SELECT file_entries.filename, index_date, last_modified, etag FROM file_entries"
+        for row in self.con.execute(("SELECT file_entries.filename, last_modified, etag, index_date FROM file_entries"
                                      " NATURAL LEFT JOIN file_versions")):
             yield (row[0], Index.Entry(row[1], row[2], row[3]))
 
@@ -126,9 +126,9 @@ class Index():
             versions = dict(rows) if rows else dict()
 
             replace_data = list({"fn": d["fn"], "ver": versions.get(d["fn"], 1), 
-                "idx": d["e"].index_date, "lmod": d["e"].last_modified, "etag": d["e"].etag} for d in data)
+                "lmod": d["e"].last_modified, "etag": d["e"].etag, "idx": d["e"].index_date} for d in data)
 
-            self.con.executemany("REPLACE INTO file_versions VALUES (:fn, :ver, :idx, :lmod, :etag)", replace_data)
+            self.con.executemany("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx)", replace_data)
             self.con.executemany("REPLACE INTO file_entries VALUES (:fn, :ver)", replace_data)
 
     def remove_many(self, iterable: Iterable[str]):
@@ -136,31 +136,14 @@ class Index():
             data = ({"fn": f} for f in iterable)
             self.con.executemany("DELETE FROM file_entries WHERE filename=:fn", data)
 
-    def ensure_version_exists(self, filename: str, version: int, index_date: datetime = None):
-        with self.con:
-            if index_date:
-                self.con.execute("INSERT OR IGNORE INTO file_versions(filename, version, index_date) VALUES (:fn, :ver, :idx)", 
-                        {"fn": filename, "ver": version, "idx": index_date})
-            else:
-                self.con.execute("INSERT OR IGNORE INTO file_versions(filename, version) VALUES (:fn, :ver)", 
-                        {"fn": filename, "ver": version})
-
-    def add_version(self, filename: str, version: int, entry: Entry = Entry(), set_current=True):
-        with self.con:
-            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :idx, :lmod, :etag)", 
-                    {"fn": filename, "ver": version, 
-                    "idx": entry.index_date, "lmod": entry.last_modified, "etag": entry.etag})
-
-            if set_current:
-                self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", 
-                        {"fn": filename, "ver": version})
-
     def get_current_version(self, filename: str, default: int = 0 ) -> int:
         row = self.con.execute("SELECT version FROM file_entries WHERE filename=:fn", {"fn": filename}).fetchone()
         return row[0] if row else default
 
-    def set_current_version(self, filename: str, version: int):
+    def add_version(self, filename: str, version: int, entry: Entry = Entry()):
         with self.con:
-            data = {"fn": filename, "ver": version}
-            self.con.execute("INSERT OR IGNORE INTO file_versions(filename, version) VALUES (:fn, :ver)", data)
+            data = {"fn": filename, "ver": version, 
+                "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date}
+
+            self.con.execute("INSERT OR IGNORE INTO file_versions VALUES (:fn, :ver, :lmod, :etag: :idx)", data)
             self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", data)
