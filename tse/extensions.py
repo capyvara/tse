@@ -28,9 +28,13 @@ class LogStatsDivulga:
         self.task.start(self.interval)
 
     def log(self, spider):
-        pending = self.stats.get_value("divulga/pending", 0)
+        pending = len(spider.pending) if hasattr(spider, "pending") else 0
         dupes = self.stats.get_value("divulga/dupes", 0)
-        logger.info("- Pending: %(pending)d, dupes: %(pending)d", {"pending": pending, "dupes": dupes}, extra={"spider": spider})
+        bumped = self.stats.get_value("divulga/bumped", 0)
+        reindexes = self.stats.get_value("divulga/reindexes", 0)
+        logger.info("Divulga - pending: %(pending)d, dupes: %(dupes)d, bumped: %(bumped)d, reindexes: %(reindexes)d", 
+            {"pending": pending, "dupes": dupes, "bumped": bumped, "reindexes": reindexes}, 
+            extra={"spider": spider})
         return
 
     def spider_closed(self, spider, reason):

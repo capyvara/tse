@@ -3,8 +3,10 @@ import glob
 import json
 import logging
 import os
+import urllib.parse
 
 import scrapy
+from scrapy import signals
 
 from tse.common.basespider import BaseSpider
 from tse.common.index import Index
@@ -88,12 +90,24 @@ class DivulgaSpider(BaseSpider):
         logging.info("Index size %d", len(self.index))
 
     def continue_requests(self, config_data):
+        self.crawler.signals.connect(self.request_reached_downloader, signals.request_reached_downloader)
+        self.crawler.signals.connect(self.request_left_downloader, signals.request_left_downloader)
+
         self.load_index()
         self.pending = dict()
+        self.downloading = set()
 
         for election in self.elections:
             logging.info("Queueing election: %s", election)
             yield from self.generate_requests_index(election)
+
+    def request_reached_downloader(self, request, spider):
+        filename = os.path.basename(urllib.parse.urlparse(request.url).path)
+        self.downloading.add(filename)
+
+    def request_left_downloader(self, request, spider):
+        filename = os.path.basename(urllib.parse.urlparse(request.url).path)
+        self.downloading.discard(filename)
 
     def closed(self, reason):
         self.index.close()
@@ -108,8 +122,13 @@ class DivulgaSpider(BaseSpider):
     def parse_index(self, response, election, state):
         self.persist_response(response, check_identical=True)
 
+        if not self.crawler.crawling:
+            return
+
         size = 0
         added = 0
+
+        transferring = self.crawler.engine.downloader.slots[response.meta["download_slot"]].transferring
 
         data = json.loads(response.body)
         for info, filedate in IndexParser.expand(state, data):
@@ -121,14 +140,24 @@ class DivulgaSpider(BaseSpider):
             if info.filename in self.index and filedate <= self.index[info.filename].index_date:
                 continue
 
-            dupe = info.filename in self.pending
+            def find_req(r):
+                return r.cb_kwargs["info"].filename == info.filename if "info" in r.cb_kwargs else False
 
-            # Pending always stores the latest known filedate
-            self.pending[info.filename] = filedate
-
-            if dupe:
-                logging.debug("Skipping pending duplicated query %s", info.filename)
+            if info.filename in self.pending:
+                # There may be some time between the enqueue of the request and the actual http get
+                # So if it isn't sent yet and a newer date is available use that instead
+                if filedate > self.pending[info.filename]:
+                    in_transfer = next(filter(find_req, transferring), None)
+                    if in_transfer == None:
+                        self.pending[info.filename] = filedate
+                        logging.debug("Bumped date for %s to %s > %s", info.filename, self.pending[info.filename], filedate)
+                        self.crawler.stats.inc_value("divulga/bumped")
+                
+                logging.debug("Skipping dupe %s %s > %s", info.filename, self.pending[info.filename], filedate)
+                self.crawler.stats.inc_value("divulga/dupes")
                 continue
+
+            self.pending[info.filename] = filedate
 
             added += 1
 
@@ -139,19 +168,20 @@ class DivulgaSpider(BaseSpider):
             elif info.type == "v" or info.ext == "sig":
                 priority = 0
 
-            logging.debug("Queueing file {%s} [{%s} > {%s}]", info.filename, self.index.get(info.filename).index_date, filedate)
+            logging.debug("Queueing file %s [%s > %s]", info.filename, self.index.get(info.filename).index_date, filedate)
 
             yield scrapy.Request(self.get_full_url(info.path), self.parse_file, errback=self.errback_file, priority=priority,
                 dont_filter=True, cb_kwargs={"info": info})
 
         if added > 0 or response.request.meta.get("reindex_count", 0) == 0:
-            logging.info("Parsed index for %s-%s, size %d, added %d, total pending {len(self.pending)}", election, state, size, added)
+            logging.info("Parsed index for %s-%s, size %d, added %d, total pending %s", election, state, size, added, len(self.pending))
 
-        if self.continuous and self.crawler.crawling:
+        if self.continuous:
             reindex_request = defer_request(60.0, response.request)
             reindex_request.priority = 1
             reindex_request.meta["reindex_count"] = reindex_request.meta.get("reindex_count", 0) + 1
             logging.debug("Queueing re-indexing of %s-%s, count: %d", election, state, reindex_request.meta['reindex_count'])
+            self.crawler.stats.inc_value("divulga/reindexes")
             yield reindex_request
 
     def errback_index(self, failure):
@@ -159,8 +189,11 @@ class DivulgaSpider(BaseSpider):
 
     def parse_file(self, response, info):
         filedate = self.pending[info.filename]
-        self.persist_response(response, filedate)
+        self.persist_response(response, filedate, check_identical=False)
         self.pending.pop(info.filename, None)
+
+        if not self.crawler.crawling:
+            return
 
         if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
             try:
