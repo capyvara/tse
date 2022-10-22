@@ -36,8 +36,8 @@ class UrnaSpider(BaseSpider):
         sig_local_path = self.get_local_path(sig_path)
         
         if force or not os.path.exists(sig_local_path):
-            return scrapy.Request(self.get_full_url(sig_path), self.parse_sigfile, errback=self.errback_sigfile,
-                dont_filter=True, priority=3, cb_kwargs={"source_path": source_path})
+            return self.make_request(sig_path, self.parse_sigfile, errback=self.errback_sigfile,
+                priority=3, cb_kwargs={"source_path": source_path})
         else:
             self.match_sigfile_filedate(self.get_local_path(source_path))
 
@@ -94,8 +94,8 @@ class UrnaSpider(BaseSpider):
                 yield from self.query_sections(state, config_data)                
             except (FileNotFoundError, json.JSONDecodeError):
                 logging.info("Queueing sections config file for %s %s", self.plea, state)
-                yield scrapy.Request(self.get_full_url(path), self.parse_section_config, errback=self.errback_section_config,
-                    dont_filter=True, priority=4, cb_kwargs={"state": state})
+                yield self.make_request(path, self.parse_section_config, errback=self.errback_section_config,
+                    priority=4, cb_kwargs={"state": state})
 
                 sig_query = self.query_sigfile(path)
                 if sig_query:
@@ -139,8 +139,8 @@ class UrnaSpider(BaseSpider):
             except (FileNotFoundError, json.JSONDecodeError):
                 logging.debug("Queueing section file %s", filename)
                 queued += 1
-                yield scrapy.Request(self.get_full_url(path), self.parse_section, errback=self.errback_section,
-                    dont_filter=True, priority=2, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
+                yield self.make_request(path, self.parse_section, errback=self.errback_section,
+                    priority=2, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
 
         logging.info("Queued %s %d section files of %d", state, queued, size)
 
@@ -172,8 +172,8 @@ class UrnaSpider(BaseSpider):
 
             if not os.path.exists(local_path):
                 logging.debug("Queueing ballot box file %s", filename)
-                yield scrapy.Request(self.get_full_url(path), self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
-                    dont_filter=True, priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section, "hashdate": hashdate})
+                yield self.make_request(path, self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
+                    priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section, "hashdate": hashdate})
             else:
                 self.update_file_timestamp(local_path, hashdate)
 

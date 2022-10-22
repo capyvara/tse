@@ -116,8 +116,8 @@ class DivulgaSpider(BaseSpider):
         for state in self.states:
             logging.debug("Queueing index file for %s-%s", election, state)
             path = PathInfo.get_state_index_path(election, state)
-            yield scrapy.Request(self.get_full_url(path), self.parse_index, errback=self.errback_index,
-                dont_filter=True, priority=4, cb_kwargs={"election": election, "state":state})
+            yield self.make_request(path, self.parse_index, errback=self.errback_index, priority = 4,  
+                cb_kwargs={"election": election, "state":state})
 
     def parse_index(self, response, election, state):
         self.persist_response(response, check_identical=True)
@@ -170,8 +170,8 @@ class DivulgaSpider(BaseSpider):
 
             logging.debug("Queueing file %s [%s > %s]", info.filename, self.index.get(info.filename).index_date, filedate)
 
-            yield scrapy.Request(self.get_full_url(info.path), self.parse_file, errback=self.errback_file, priority=priority,
-                dont_filter=True, cb_kwargs={"info": info})
+            yield self.make_request(info.path, self.parse_file, errback=self.errback_file, priority=priority,
+                cb_kwargs={"info": info})
 
         if added > 0 or response.request.meta.get("reindex_count", 0) == 0:
             logging.info("Parsed index for %s-%s, size %d, added %d, total pending %s", election, state, size, added, len(self.pending))
@@ -223,8 +223,8 @@ class DivulgaSpider(BaseSpider):
                 self.pending[filename] = None
                 added += 1
                 logging.debug("Queueing picture %s", filename)
-                yield scrapy.Request(self.get_full_url(path), self.parse_picture, priority=1,
-                    dont_filter=True, cb_kwargs={"filename": filename, "filedate": filedate})
+                yield self.make_request(path, self.parse_picture, priority=1, 
+                    cb_kwargs={"filename": filename, "filedate": filedate})
             else:
                 self.update_file_timestamp(target_path, filedate)
 

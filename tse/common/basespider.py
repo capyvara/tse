@@ -7,7 +7,7 @@ import re
 import time
 import urllib.parse
 import zipfile
-from email.utils import parsedate_to_datetime
+from email.utils import parsedate_to_datetime, format_datetime
 
 import scrapy
 from scrapy.utils.python import to_unicode
@@ -118,7 +118,7 @@ class BaseSpider(scrapy.Spider):
         self.index.set_current_version(filename, version)
         return (version, ver_path)
 
-    def _rfc1123_to_datetime(self, date_str):
+    def _rfc2822_to_datetime(self, date_str):
         try:
             date_str = to_unicode(date_str, encoding='ascii')
             return parsedate_to_datetime(date_str).replace(tzinfo=None)
@@ -126,7 +126,7 @@ class BaseSpider(scrapy.Spider):
             return None  
                   
     def get_http_cache_headers(self, response):
-        last_modified = self._rfc1123_to_datetime(response.headers[b"Last-Modified"])
+        last_modified = self._rfc2822_to_datetime(response.headers[b"Last-Modified"])
         etag = to_unicode(response.headers[b"etag"]).strip('"')
         return (last_modified, etag)
 
@@ -139,6 +139,20 @@ class BaseSpider(scrapy.Spider):
         old_entry = self.index.get(filename)
         if old_entry.index_date != filedate:
             self.index[filename] = Index.Entry(filedate, old_entry.last_modified, old_entry.etag)
+
+    def make_request(self, path: str, *args, **kwargs):
+        kwargs["dont_filter"] = kwargs.get("dont_filter", True)
+        
+        headers = kwargs.get("headers", {})
+        
+        entry = self.index.get(os.path.basename(path))
+        if entry.last_modified != None:
+            headers[b"If-Modified-Since"] = format_datetime(entry.last_modified.replace(tzinfo=datetime.timezone.utc), True)
+        if entry.etag != None:
+            headers[b"ETag"] = f'"{entry.etag}"'
+
+        kwargs["headers"] = headers
+        return scrapy.Request(self.get_full_url(path), *args, **kwargs)
 
     def persist_response(self, response, filedate=None, check_identical=False):
         url_path = os.path.relpath(urllib.parse.urlparse(response.url).path, "/")
