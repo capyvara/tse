@@ -4,6 +4,7 @@ import os
 import urllib.parse
 
 from scrapy import signals
+from scrapy.downloadermiddlewares.retry import get_retry_request
 
 from tse.common.basespider import BaseSpider
 from tse.common.pathinfo import PathInfo
@@ -127,7 +128,6 @@ class DivulgaSpider(BaseSpider):
                         logging.debug("Bumped date for %s to %s > %s", info.filename, self.pending[info.filename], new_index_date)
                         self.crawler.stats.inc_value("divulga/bumped")
                 
-                self.crawler.stats.inc_value("divulga/dupes")
                 continue
 
             self.pending[info.filename] = new_index_date
@@ -154,14 +154,16 @@ class DivulgaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def parse_file(self, response, info):
+        result = self.persist_response(response)
+
+        # Server may send a version that wasn't updated yet so keep the old index date
+        if not result.is_new_file:
+            self.crawler.stats.inc_value("divulga/dupes")
+            return get_retry_request(response.request, 
+                spider=self, reason='outdated index', max_retry_times=1, priority_adjust=-1)
+
         index_date = self.pending[info.filename]
         self.pending.pop(info.filename, None)
-
-        # Server may send a version that wasn't updated yet so keep the old index date to it is retried later
-        result = self.persist_response(response)
-        if not result.is_new_file:
-            return
-
         self.index[info.filename] = result.index_entry._replace(index_date=index_date)
 
         if not self.crawler.crawling:
