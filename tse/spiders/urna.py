@@ -144,7 +144,6 @@ class UrnaSpider(BaseSpider):
             local_path = self.get_local_path(path)
 
             if not os.path.exists(local_path):
-                logging.debug("Scheduling ballot box file %s", filename)
                 yield self.make_request(path, self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
                     priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
             else:

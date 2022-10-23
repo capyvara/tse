@@ -78,7 +78,7 @@ class DivulgaSpider(BaseSpider):
         if info.type in ("c", "a", "cm", "f", "jpeg"):
             priority += 6
         # Simplified results, totalling status
-        elif info.type in ("r", "ab", "e"):
+        elif info.type in ("r", "ab", "t", "e"):
             priority += 4
         # Variable results
         elif info.type == "v":
@@ -199,8 +199,6 @@ class DivulgaSpider(BaseSpider):
                 logging.debug("Scheduling picture %s", filename)
                 yield self.make_request(path, self.parse_picture, priority=self.get_file_priority(info), 
                     cb_kwargs={"filename": filename, "index_date": index_date})
-            else:
-                self.update_file_timestamp(local_path, index_date)
 
         if added > 0:
             logging.info("Added pictures %d, total pending %d", added, len(self.pending))
