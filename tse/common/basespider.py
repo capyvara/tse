@@ -33,10 +33,6 @@ class BaseSpider(scrapy.Spider):
     def query_common(self):
         yield self.make_request(PathInfo.get_election_config_path(), self.parse_config)
 
-    def load_json(self, path):
-        with open(path, "r") as f:
-            return json.load(f)
-
     def parse_config(self, response):
         result = self.persist_response(response)
         config_data = json.loads(result.contents)
@@ -74,17 +70,6 @@ class BaseSpider(scrapy.Spider):
         last_modified = self._rfc2822_to_datetime(response.headers[b"Last-Modified"])
         etag = to_unicode(response.headers[b"etag"]).strip('"')
         return (last_modified, etag)
-
-    # TODO: Move to urna
-    def update_file_timestamp(self, target_path, filedate):
-        dt_epoch = filedate.timestamp()
-        if os.path.getmtime(target_path) != dt_epoch:
-            os.utime(target_path, (dt_epoch, dt_epoch))
-            
-        filename = os.path.basename(target_path)            
-        old_entry = self.index.get(filename)
-        if old_entry and old_entry.index_date != filedate:
-            self.index[filename] = Index.Entry(old_entry.last_modified, old_entry.etag, filedate)
 
     def make_request(self, path: str, *args, **kwargs):
         entry = self.index.get(os.path.basename(path))

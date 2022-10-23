@@ -1,16 +1,13 @@
-import datetime
 import json
 import logging
 import os
 import signal
 
-import scrapy
 from scrapy.spidermiddlewares.httperror import HttpError
 
 from tse.common.basespider import BaseSpider
 from tse.common.pathinfo import PathInfo
-from tse.parsers import (SectionAuxParser, SectionsConfigParser,
-                         get_dh_timestamp)
+from tse.parsers import (SectionAuxParser, SectionsConfigParser)
 
 
 class UrnaSpider(BaseSpider):
@@ -31,6 +28,10 @@ class UrnaSpider(BaseSpider):
         self.shutdown = True
         self.sigHandler(signum, frame)
 
+    def load_json(self, path):
+        with open(path, "r") as f:
+            return json.load(f)
+
     def query_sigfile(self, source_path, force=False):
         sig_path = os.path.splitext(source_path)[0] + ".sig"
         sig_local_path = self.get_local_path(sig_path)
@@ -38,34 +39,20 @@ class UrnaSpider(BaseSpider):
         if force or not os.path.exists(sig_local_path):
             return self.make_request(sig_path, self.parse_sigfile, errback=self.errback_sigfile,
                 priority=3, cb_kwargs={"source_path": source_path})
-        else:
-            self.match_sigfile_filedate(self.get_local_path(source_path))
 
         return None
 
-    def match_sigfile_filedate(self, source_local_path):
-        sig_local_path = os.path.splitext(source_local_path)[0] + ".sig"
-        if os.path.exists(source_local_path) and os.path.exists(sig_local_path):
-            source_filedate = datetime.datetime.fromtimestamp(os.path.getmtime(source_local_path))
-            self.update_file_timestamp(sig_local_path, source_filedate)
-
     def parse_sigfile(self, response, source_path):
         self.persist_response(response, check_identical=True)
-        self.match_sigfile_filedate(self.get_local_path(source_path))
 
     def errback_sigfile(self, failure):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
-
-    def load_index(self):
-        logging.info("Index size %d", len(self.index))
 
     def continue_requests(self, config_data):
         # Allows us to stop in the middle of start_requests
         # TODO: Any way to control consuptiom of the generator?
         self.sigHandler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, self.handle_sigint)
-
-        self.load_index()
 
         yield from self.query_sections_configs()
 
@@ -83,17 +70,14 @@ class UrnaSpider(BaseSpider):
                 logging.info("Reading sections config file for %s %s", self.plea, state)
                 local_path = self.get_local_path(path)
                 config_data = self.load_json(local_path)
-                
-                filedate = get_dh_timestamp(config_data, "dg", "hg")
-                self.update_file_timestamp(local_path, filedate)
-                
+                                
                 sig_query = self.query_sigfile(path)
                 if sig_query:
                     yield sig_query
 
                 yield from self.query_sections(state, config_data)                
             except (FileNotFoundError, json.JSONDecodeError):
-                logging.info("Queueing sections config file for %s %s", self.plea, state)
+                logging.info("Scheduling sections config file for %s %s", self.plea, state)
                 yield self.make_request(path, self.parse_section_config, errback=self.errback_section_config,
                     priority=4, cb_kwargs={"state": state})
 
@@ -102,12 +86,8 @@ class UrnaSpider(BaseSpider):
                     yield sig_query
 
     def parse_section_config(self, response, state):
-        data = json.loads(response.body)
-        filedate = get_dh_timestamp(data, "dg", "hg")
-        persisted_path = self.persist_response(response, filedate, check_identical=True)
-        self.match_sigfile_filedate(persisted_path)
-
-        yield from self.query_sections(state, data)
+        result = self.persist_response(response)
+        yield from self.query_sections(state, json.loads(result.contents))
 
     def errback_section_config(self, failure):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
@@ -129,9 +109,6 @@ class UrnaSpider(BaseSpider):
                 local_path = self.get_local_path(path)
                 aux_data = self.load_json(local_path)
 
-                filedate = get_dh_timestamp(aux_data, "dg", "hg")
-                self.update_file_timestamp(local_path, filedate)
-
                 if aux_data["st"] in ("Não instalada"):
                     continue
 
@@ -145,11 +122,8 @@ class UrnaSpider(BaseSpider):
         logging.info("Queued %s %d section files of %d", state, queued, size)
 
     def parse_section(self, response, state, city, zone, section):
-        data = json.loads(response.body)
-        filedate = get_dh_timestamp(data, "dg", "hg")
-        self.persist_response(response, filedate, check_identical=True)
-
-        yield from self.download_ballot_box_files(state, city, zone, section, data)
+        result = self.persist_response(response)
+        yield from self.download_ballot_box_files(state, city, zone, section, json.loads(result.contents))
 
     def errback_section(self, failure):
         if failure.check(HttpError) and failure.value.response.status == 403:
@@ -159,7 +133,7 @@ class UrnaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def download_ballot_box_files(self, state, city, zone, section, data):
-        hash, hashdate, filenames = SectionAuxParser.get_files(data)
+        hash, _, filenames = SectionAuxParser.get_files(data)
         if hash == None:
             return
 
@@ -173,12 +147,10 @@ class UrnaSpider(BaseSpider):
             if not os.path.exists(local_path):
                 logging.debug("Queueing ballot box file %s", filename)
                 yield self.make_request(path, self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
-                    priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section, "hashdate": hashdate})
-            else:
-                self.update_file_timestamp(local_path, hashdate)
+                    priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
 
-    def parse_ballot_box_file(self, response, state, city, zone, section, hashdate):
-        self.persist_response(response, hashdate)
+    def parse_ballot_box_file(self, response, state, city, zone, section):
+        self.persist_response(response)
 
     def errback_ballot_box_file(self, failure):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
