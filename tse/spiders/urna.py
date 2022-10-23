@@ -13,6 +13,12 @@ from tse.parsers import (SectionAuxParser, SectionsConfigParser)
 class UrnaSpider(BaseSpider):
     name = "urna"
 
+    custom_settings = {
+        "EXTENSIONS": {
+            'tse.extensions.LogStatsUrna': 543,
+        }
+    }
+
     # Priorities (higher to lower)
     # 4 - Section configs
     # 3 - Section configs.sig
@@ -67,7 +73,6 @@ class UrnaSpider(BaseSpider):
             path = PathInfo.get_sections_config_path(self.plea, state)
 
             try:
-                logging.info("Reading sections config file for %s %s", self.plea, state)
                 local_path = self.get_local_path(path)
                 config_data = self.load_json(local_path)
                                 
@@ -93,33 +98,23 @@ class UrnaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def query_sections(self, state, data):
-        size = 0
-        queued = 0
+        logging.info("Processing sections config file for %s %s", self.plea, state)
 
         for city, zone, section in SectionsConfigParser.expand_sections(data):
             if self.shutdown:
                 break
 
             path = PathInfo.get_section_aux_path(self.plea, state, city, zone, section)
-            filename = os.path.basename(path)
-            size += 1
+            self.crawler.stats.inc_value("urna/sections")
 
             try:
-                logging.debug("Reading section file %s", filename)
                 local_path = self.get_local_path(path)
                 aux_data = self.load_json(local_path)
 
-                if aux_data["st"] in ("Não instalada"):
-                    continue
-
                 yield from self.download_ballot_box_files(state, city, zone, section, aux_data)
             except (FileNotFoundError, json.JSONDecodeError):
-                logging.debug("Queueing section file %s", filename)
-                queued += 1
                 yield self.make_request(path, self.parse_section, errback=self.errback_section,
                     priority=2, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
-
-        logging.info("Queued %s %d section files of %d", state, queued, size)
 
     def parse_section(self, response, state, city, zone, section):
         result = self.persist_response(response)
@@ -133,6 +128,8 @@ class UrnaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def download_ballot_box_files(self, state, city, zone, section, data):
+        self.crawler.stats.inc_value("urna/processed_sections")
+
         hash, _, filenames = SectionAuxParser.get_files(data)
         if hash == None:
             return
@@ -141,16 +138,21 @@ class UrnaSpider(BaseSpider):
             if self.ignore_pattern and self.ignore_pattern.match(filename):
                 continue
 
+            self.crawler.stats.inc_value("urna/ballot_box_files")
+
             path = PathInfo.get_ballot_box_file_path(self.plea, state, city, zone, section, hash, filename)
             local_path = self.get_local_path(path)
 
             if not os.path.exists(local_path):
-                logging.debug("Queueing ballot box file %s", filename)
+                logging.debug("Scheduling ballot box file %s", filename)
                 yield self.make_request(path, self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
                     priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
+            else:
+                self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 
     def parse_ballot_box_file(self, response, state, city, zone, section):
         self.persist_response(response)
+        self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 
     def errback_ballot_box_file(self, failure):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))

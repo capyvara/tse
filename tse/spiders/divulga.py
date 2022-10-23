@@ -36,7 +36,7 @@ class DivulgaSpider(BaseSpider):
         self.downloading = set()
 
         for election in self.elections:
-            logging.info("Queueing election: %s", election)
+            logging.info("Scheduling election: %s", election)
             yield from self.generate_requests_index(election)
 
     def request_reached_downloader(self, request, spider):
@@ -52,7 +52,7 @@ class DivulgaSpider(BaseSpider):
 
     def generate_requests_index(self, election):
         for state in self.states:
-            logging.debug("Queueing index file for %s-%s", election, state)
+            logging.debug("Scheduling index file for %s-%s", election, state)
             path = PathInfo.get_state_index_path(election, state)
             yield self.make_request(path, self.parse_index, errback=self.errback_index, 
                 priority = 1000 if state == "br" else 900,
@@ -119,7 +119,7 @@ class DivulgaSpider(BaseSpider):
                 return r.cb_kwargs["info"].filename == info.filename if "info" in r.cb_kwargs else False
 
             if info.filename in self.pending:
-                # There may be some time between the enqueue of the request and the actual http get
+                # There may be some time between the schedule of the request and the actual http get
                 # So if it isn't sent yet and a newer date is available use that instead
                 if new_index_date > self.pending[info.filename]:
                     in_transfer = next(filter(find_req, transferring), None)

@@ -67,21 +67,21 @@ KEEP_OLD_VERSIONS = True
 
 
 # Sim env
-HOST = "https://resultados-sim.tse.jus.br"
-ENVIRONMENT = "teste"
-CYCLE = "ele2022"
-ELECTIONS = ["9722", "9724"]
-PLEA = "8480"
+# HOST = "https://resultados-sim.tse.jus.br"
+# ENVIRONMENT = "teste"
+# CYCLE = "ele2022"
+# ELECTIONS = ["9722", "9724"]
+# PLEA = "8480"
 
 
 # Prod env
-# HOST = "https://resultados.tse.jus.br"
-# ENVIRONMENT = "oficial"
-# CYCLE = "ele2022"
+HOST = "https://resultados.tse.jus.br"
+ENVIRONMENT = "oficial"
+CYCLE = "ele2022"
 
 # 1st round
-# PLEA = "406"
-# ELECTIONS = ["544", "546", "548"]
+PLEA = "406"
+ELECTIONS = ["544", "546", "548"]
 
 # 2nd round
 # PLEA = "407"
