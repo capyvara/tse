@@ -159,8 +159,9 @@ class DivulgaSpider(BaseSpider):
         # Server may send a version that wasn't updated yet so keep the old index date
         if not result.is_new_file:
             self.crawler.stats.inc_value("divulga/dupes")
-            return get_retry_request(response.request, 
+            yield get_retry_request(response.request, 
                 spider=self, reason='outdated index', max_retry_times=1, priority_adjust=-1)
+            return
 
         index_date = self.pending[info.filename]
         self.pending.pop(info.filename, None)
