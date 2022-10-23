@@ -7,6 +7,7 @@ import time
 import urllib.parse
 import zipfile
 from email.utils import parsedate_to_datetime, format_datetime
+from pyparsing import NamedTuple
 
 import scrapy
 from twisted.web.client import ResponseFailed
@@ -38,7 +39,7 @@ class BaseSpider(scrapy.Spider):
 
     def parse_config(self, response):
         result = self.persist_response(response)
-        config_data = json.loads(result.body)
+        config_data = json.loads(result.contents)
         yield from self.continue_requests(config_data)
 
     def get_local_path(self, path):
@@ -82,12 +83,12 @@ class BaseSpider(scrapy.Spider):
             
         filename = os.path.basename(target_path)            
         old_entry = self.index.get(filename)
-        if old_entry.index_date != filedate:
+        if old_entry and old_entry.index_date != filedate:
             self.index[filename] = Index.Entry(old_entry.last_modified, old_entry.etag, filedate)
 
     def make_request(self, path: str, *args, **kwargs):
         entry = self.index.get(os.path.basename(path))
-        if entry.has_http_cache and os.path.exists(self.get_local_path(path)):
+        if entry and os.path.exists(self.get_local_path(path)):
             headers = kwargs.setdefault("headers", {})
 
             if entry.last_modified != None:
@@ -101,19 +102,22 @@ class BaseSpider(scrapy.Spider):
         kwargs.setdefault("dont_filter", True)
         return scrapy.Request(self.get_full_url(path), *args, **kwargs)
 
-    class PersistedResult:
-        def __init__(self, target_path, index_entry, body = None):
-            self.target_path = target_path
-            self.index_entry = index_entry
-            self._body = body
+    class PersistedResult(NamedTuple):
+        local_path: str
+        index_entry: Index.Entry
+        body: str = None
 
         @property
-        def body(self) -> str:
-            if self._body: 
-                return self._body
+        def contents(self) -> str:
+            if self.body: 
+                return self.body
 
-            with open(self.target_path, "r") as f:
+            with open(self.local_path, "r") as f:
                 return f.read()
+
+        @property
+        def is_new_file(self) -> str:
+            return self.body is not None
 
     def persist_response(self, response, index_date = None, check_identical = True) -> PersistedResult:
         local_path = os.path.join(self.settings["FILES_STORE"], urllib.parse.urlparse(response.url).path.strip("/"))
@@ -123,17 +127,17 @@ class BaseSpider(scrapy.Spider):
         index_entry = self.index.get(filename)
 
         if response.status == 304:
-            if (index_entry.has_http_cache and 
+            if (index_entry and 
                     (index_entry.last_modified == last_modified) and 
                     (index_entry.etag == etag) and 
                     os.path.exists(local_path)):
                 return self.PersistedResult(local_path, index_entry)
             else:
                 # TODO invalidate/retry
-                # os.remove(target_path)
+                # os.remove(local_path)
                 raise ResponseFailed(response)
 
-        index_entry = Index.Entry(last_modified, etag, index_date)
+        index_entry = Index.Entry(last_modified, etag)
 
         if self.keep_old_versions:
             index_version = self.archive_version(filename)

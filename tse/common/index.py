@@ -7,13 +7,9 @@ from typing import NamedTuple, Tuple
 
 class Index():
     class Entry(NamedTuple):
-        last_modified: datetime.datetime = None
-        etag: str = None
+        last_modified: datetime.datetime
+        etag: str
         index_date: datetime.datetime = None
-
-        @property
-        def has_http_cache(self):
-            return self.last_modified or self.etag
 
     def __init__(self, persist_path=None):
         self.con = sqlite3.connect(persist_path if persist_path else ":memory:", 
@@ -105,7 +101,7 @@ class Index():
     def add(self, filename: str, entry: Entry):
         self[filename] = entry
 
-    def get(self, filename: str, default: Entry = Entry()) -> Entry:
+    def get(self, filename: str, default: Entry = None) -> Entry:
         try:
             return self[filename]
         except KeyError:
@@ -140,7 +136,7 @@ class Index():
         row = self.con.execute("SELECT version FROM file_entries WHERE filename=:fn", {"fn": filename}).fetchone()
         return row[0] if row else default
 
-    def add_version(self, filename: str, version: int, entry: Entry = Entry()):
+    def add_version(self, filename: str, version: int, entry: Entry):
         with self.con:
             data = {"fn": filename, "ver": version, 
                 "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date}

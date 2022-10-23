@@ -19,6 +19,7 @@ HTTPCACHE_ENABLED = False
 ROBOTSTXT_OBEY = False
 COOKIES_ENABLED = False
 REFERER_ENABLED = False
+RANDOMIZE_DOWNLOAD_DELAY = False
 URLLENGTH_LIMIT = None
 SPIDER_MIDDLEWARES = {
     'scrapy.spidermiddlewares.depth.DepthMiddleware': None,
@@ -29,16 +30,17 @@ SPIDER_MIDDLEWARES = {
 # Where to put downloaded files
 FILES_STORE = "data/download"
 
-# Autothrottle will handle the actual concurrency
-# When using continuous mode, the re-indexing queries constantly occupies at least num_elections * num_states slots
+# Autothrottle will handle the actual concurrency 
+# Keep min keep slots for reindexes: (num states * num elections) + auto target concurrency + slack
 CONCURRENT_REQUESTS = 200
 CONCURRENT_REQUESTS_PER_DOMAIN = 200
 
 # How aggressive should the scrapping be done, watch out to not flood the server
 AUTOTHROTTLE_ENABLED = True
-AUTOTHROTTLE_START_DELAY = 0.1
-AUTOTHROTTLE_TARGET_CONCURRENCY = 10.0
+AUTOTHROTTLE_START_DELAY = 0.01
+AUTOTHROTTLE_TARGET_CONCURRENCY = 50.0
 
+DOWNLOAD_TIMEOUT = 10
 RETRY_TIMES = 5
 
 # States to get information from, beware that without "br" some shared files such as config woudn't be downloaded
@@ -65,22 +67,23 @@ KEEP_OLD_VERSIONS = True
 
 
 # Sim env
-# HOST = "https://resultados-sim.tse.jus.br"
-# ENVIRONMENT = "teste"
-# CYCLE = "ele2022"
-# ELECTIONS = ["9722", "9724"]
-# PLEA = "8480"
+HOST = "https://resultados-sim.tse.jus.br"
+ENVIRONMENT = "teste"
+CYCLE = "ele2022"
+ELECTIONS = ["9722", "9724"]
+PLEA = "8480"
 
 
 # Prod env
-HOST = "https://resultados.tse.jus.br"
-ENVIRONMENT = "oficial"
-CYCLE = "ele2022"
+# HOST = "https://resultados.tse.jus.br"
+# ENVIRONMENT = "oficial"
+# CYCLE = "ele2022"
 
 # 1st round
 # PLEA = "406"
 # ELECTIONS = ["544", "546", "548"]
 
 # 2nd round
-PLEA = "407"
-ELECTIONS = ["545", "547"]
+# PLEA = "407"
+# ELECTIONS = ["545", "547"]
+

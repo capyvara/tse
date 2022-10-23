@@ -27,10 +27,10 @@
                 "AUTOTHROTTLE_DEBUG=False",
                 "--loglevel=DEBUG",
                 "-a",
-                "_continuous=True"
+                "continuous=True"
             ],
             "console": "integratedTerminal",
-            "env": {"__https_proxy": "localhost:8888"},
+            "env": {"https_proxy": "localhost:8888"},
             "justMyCode": false
         }
     ]
