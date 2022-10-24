@@ -47,9 +47,6 @@ class DivulgaSpider(BaseSpider):
         filename = os.path.basename(urllib.parse.urlparse(request.url).path)
         self.downloading.discard(filename)
 
-    def closed(self, reason):
-        self.index.close()
-
     def generate_requests_index(self, election):
         for state in self.states:
             logging.debug("Scheduling index file for %s-%s", election, state)
@@ -154,18 +151,24 @@ class DivulgaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def parse_file(self, response, info):
-        result = self.persist_response(response)
+        index_date = self.pending.pop(info.filename, None)
+        if not index_date:
+            return
+
+        result = self.persist_response(response, index_date)
 
         # Server may send a version that wasn't updated yet so keep the old index date
         if not result.is_new_file:
             self.crawler.stats.inc_value("divulga/dupes")
-            yield get_retry_request(response.request, 
-                spider=self, reason='outdated index', max_retry_times=1, priority_adjust=-1)
-            return
+            
+            retry_request = get_retry_request(response.request, 
+                spider=self, reason='outdated_index', max_retry_times=1, priority_adjust=-1)
+            
+            if retry_request:
+                self.pending[info.filename] = index_date
+                yield retry_request
 
-        index_date = self.pending[info.filename]
-        self.pending.pop(info.filename, None)
-        self.index[info.filename] = result.index_entry._replace(index_date=index_date)
+            return
 
         if not self.crawler.crawling:
             return
@@ -195,7 +198,7 @@ class DivulgaSpider(BaseSpider):
 
             local_path = self.get_local_path(path)
             if not os.path.exists(local_path):
-                self.pending[filename] = None
+                self.pending[filename] = index_date
                 added += 1
                 logging.debug("Scheduling picture %s", filename)
                 yield self.make_request(path, self.parse_picture, priority=self.get_file_priority(info), 

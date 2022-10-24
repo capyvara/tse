@@ -49,7 +49,7 @@ class UrnaSpider(BaseSpider):
         return None
 
     def parse_sigfile(self, response, source_path):
-        self.persist_response(response, check_identical=True)
+        self.persist_response(response)
 
     def errback_sigfile(self, failure):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))

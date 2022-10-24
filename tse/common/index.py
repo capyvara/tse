@@ -40,7 +40,7 @@ class Index():
             ))
 
             self.con.execute((
-                "CREATE VIEW IF NOT EXISTS files_items AS"
+                "CREATE VIEW IF NOT EXISTS file_items AS"
                 " SELECT file_entries.filename, file_entries.version, last_modified, etag, index_date"
                 " FROM file_entries NATURAL LEFT JOIN file_versions;"
             ))
@@ -50,6 +50,9 @@ class Index():
 
     def close(self):
         if self.con:
+            with self.con:
+                self.con.execute("PRAGMA journal_mode = DELETE")
+                
             self.con.close()
 
     def __enter__(self):
@@ -141,5 +144,5 @@ class Index():
             data = {"fn": filename, "ver": version, 
                 "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date}
 
-            self.con.execute("INSERT OR IGNORE INTO file_versions VALUES (:fn, :ver, :lmod, :etag: :idx)", data)
+            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag: :idx)", data)
             self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", data)

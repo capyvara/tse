@@ -104,7 +104,7 @@ class BaseSpider(scrapy.Spider):
         def is_new_file(self) -> str:
             return self.body is not None
 
-    def persist_response(self, response, index_date = None, check_identical = True) -> PersistedResult:
+    def persist_response(self, response, index_date = None) -> PersistedResult:
         local_path = os.path.join(self.settings["FILES_STORE"], urllib.parse.urlparse(response.url).path.strip("/"))
         filename = os.path.basename(local_path)
 
@@ -119,22 +119,20 @@ class BaseSpider(scrapy.Spider):
                 return self.PersistedResult(local_path, index_entry)
             else:
                 # TODO invalidate/retry
-                # os.remove(local_path)
                 raise ResponseFailed(response)
 
-        index_entry = Index.Entry(last_modified, etag)
+        index_entry = Index.Entry(last_modified, etag, index_date)
 
-        if self.keep_old_versions:
-            index_version = self.archive_version(filename)
-            if index_version != 0:
-                self.index.add_version(filename, index_version + 1, index_entry)
+        index_version = self.archive_version(filename) if self.keep_old_versions else 0
+        if index_version != 0:
+            self.index.add_version(filename, index_version + 1, index_entry)
+        else:
+            self.index[filename] = index_entry
 
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         with open(local_path, "wb") as f:
             f.write(response.body)
 
-        self.index[filename] = index_entry
-            
         dt_epoch = last_modified.timestamp()
         os.utime(local_path, (dt_epoch, dt_epoch))
 
@@ -176,6 +174,9 @@ class BaseSpider(scrapy.Spider):
         self.validate_index()
 
         logging.info("Index size %d", len(self.index))
+
+    def closed(self, reason):
+        self.index.close()
 
     def validate_index_entry(self, filename, entry: Index.Entry):
         info = PathInfo(filename)
