@@ -125,6 +125,10 @@ class PathInfo:
         return "comum/config/ele-c.json"
 
     @staticmethod
+    def get_cities_config_path(election):
+        return f"{election}/config/mun-e{election:0>6}-cm.json"
+    
+    @staticmethod
     def get_picture_path(election, cand_state, sqcand):
         return f"{election}/fotos/{cand_state}/{sqcand}.jpeg"
 

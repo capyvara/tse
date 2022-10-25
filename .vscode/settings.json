@@ -3,5 +3,6 @@
     "files.watcherExclude": {
         "**/data/**": true
     },
-    "jupyter.notebookFileRoot": "${workspaceFolder}"
+    "jupyter.notebookFileRoot": "${workspaceFolder}",
+    "jupyter.debugJustMyCode": false
 }

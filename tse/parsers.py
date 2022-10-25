@@ -80,3 +80,17 @@ class SectionAuxParser:
                 continue
             
             yield (hash["hash"], get_dh_timestamp(hash, "dr", "hr"), hash["nmarq"])
+
+
+class CityConfigParser:
+    @staticmethod
+    def expand_cities(data):
+        for abr in data["abr"]:
+            state = abr["cd"].lower()
+            for mu in abr["mu"]:
+                city = mu["cd"].lstrip("0")
+                city_ibge = mu["cdi"].lstrip("0")
+                name = mu["nm"]
+                is_capital = mu["c"] == "S"
+                zones = mu["z"]
+                yield (state, city, city_ibge, name, is_capital, [z.lstrip("0") for z in zones])
