@@ -220,16 +220,30 @@ class BaseSpider(scrapy.Spider):
         if hasattr(self, "index"):
             self.index.close()
 
+    def find_local_path_elections(self):
+        for entry in os.scandir(self.get_local_path("")):
+            if entry.is_dir and not entry.name.startswith(".") and entry.name.isdigit():
+                yield entry.name
+
     def get_state(self, city):
         if self._city_state_map:
             return self._city_state_map[city]
-        
-        config_path = PathInfo.get_newest_cities_config_path(self.settings)
 
-        with open(config_path, "r") as f:
-            data = json.load(f)
-            map = ((ccity, cstate) for cstate, ccity, _, _, _, _ in CityConfigParser.expand_cities(data))
-            self._city_state_map = dict(map)
+        config_paths = ["data/mun-default-cm.json"]
+
+        # Since index is shared we must account for new entries that may be added on later elections
+        for election in sorted(self.find_local_path_elections()):
+            config_path = self.get_local_path(PathInfo.get_cities_config_path(election))
+            if os.path.exists(config_path):
+                config_paths.append(config_path)
+
+        self._city_state_map = {}
+
+        for config_path in config_paths:
+            with open(config_path, "r") as f:
+                data = json.load(f)
+                map = {ccity: cstate for cstate, ccity, _, _, _, _ in CityConfigParser.expand_cities(data)}
+                self._city_state_map.update(map)
         
         return self._city_state_map[city]
 

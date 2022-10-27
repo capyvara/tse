@@ -1,4 +1,3 @@
-import glob
 import os
 import re
 from datetime import datetime
@@ -126,19 +125,6 @@ class PathInfo:
             return os.path.join(f"{settings['HOST']}/{settings['ENVIRONMENT']}", path)
 
         return os.path.join(f"{settings['HOST']}/{settings['ENVIRONMENT']}/{settings['CYCLE']}", path)
-
-    @classmethod
-    def find_all_cities_config_paths(cls, settings):
-        yield from glob.iglob(cls.get_local_path(settings, f"[0-9]*/config/mun-*-cm.json"), recursive=True)
-
-    @classmethod
-    def get_newest_cities_config_path(cls, settings):
-        cities_config_list = list(cls.find_all_cities_config_paths(settings))
-
-        if len(cities_config_list) > 0:
-            return sorted(cities_config_list, key=os.path.getmtime, reverse=True)[0]
-        else:
-            return "data/mun-default-cm.json" 
 
     @staticmethod
     def get_state_index_path(election, state):
