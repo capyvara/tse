@@ -1,10 +1,10 @@
 import datetime
-import glob
 import json
 import logging
 import os
 import re
 import hashlib
+import signal
 
 import urllib.parse
 from email.utils import parsedate_to_datetime, format_datetime
@@ -25,13 +25,24 @@ class BaseSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.shutdown = False
+        self._sigHandler = None
+
         self._city_state_map = None
+
+    def _handle_sigint(self, signum, frame):
+        self.shutdown = True
+        if self._sigHandler:
+            self._sigHandler(signum, frame)
 
     def continue_requests(self, config_data, config_entry):
         raise NotImplementedError(f"{self.__class__.__name__}.continue_requests callback is not defined")
 
     def start_requests(self):
         self.initialize()
+        if self.shutdown:
+            return
+            
         yield from self.query_common()
 
     def query_common(self):
@@ -186,6 +197,9 @@ class BaseSpider(scrapy.Spider):
         if type(self) == BaseSpider:
             raise NotImplementedError(f"BaseSpider is meant to be a inherited from")
 
+        self._sigHandler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, self._handle_sigint)
+
         logging.info("Host: %s", self.settings["HOST"])
         logging.info("Environment: %s", self.settings["ENVIRONMENT"])
         logging.info("Cycle: %s", self.settings["CYCLE"])
@@ -210,13 +224,7 @@ class BaseSpider(scrapy.Spider):
         if self._city_state_map:
             return self._city_state_map[city]
         
-        cities_config_list = glob.glob(self.get_local_path(f"[0-9]*/config/mun-*-cm.json"), recursive=True)
-
-        config_path = None
-        if len(cities_config_list) > 0:
-            config_path = sorted(cities_config_list, key=os.path.getmtime, reverse=True)[0]
-        else:
-            config_path = "data/mun-default-cm.json"
+        config_path = PathInfo.get_newest_cities_config_path(self.settings)
 
         with open(config_path, "r") as f:
             data = json.load(f)
@@ -257,7 +265,14 @@ class BaseSpider(scrapy.Spider):
     def validate_index(self):
         logging.info("Validating index...")
 
-        invalid = [f for f, e in log_progress(self.index.items(), len(self.index)) if not self.validate_index_entry(f, e)]
+        invalid = []
+        for f, e in log_progress(self.index.items(), len(self.index)):
+            if self.shutdown:
+                return
+
+            if not self.validate_index_entry(f, e):
+                invalid.append(f)
+
         if len(invalid) > 0:
             self.index.remove_many(invalid)
             self.index.vacuum()

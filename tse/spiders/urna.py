@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import signal
 
 from scrapy.spidermiddlewares.httperror import HttpError
 
@@ -27,12 +26,6 @@ class UrnaSpider(BaseSpider):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.shutdown = False
-        self.sigHandler = None
-
-    def handle_sigint(self, signum, frame):
-        self.shutdown = True
-        self.sigHandler(signum, frame)
 
     def load_json(self, path):
         with open(path, "r") as f:
@@ -55,11 +48,6 @@ class UrnaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def continue_requests(self, config_data):
-        # Allows us to stop in the middle of start_requests
-        # TODO: Any way to control consuptiom of the generator?
-        self.sigHandler = signal.getsignal(signal.SIGINT)
-        signal.signal(signal.SIGINT, self.handle_sigint)
-
         yield from self.query_sections_configs()
 
     def query_sections_configs(self):
@@ -131,7 +119,7 @@ class UrnaSpider(BaseSpider):
     def download_ballot_box_files(self, state, city, zone, section, data):
         self.crawler.stats.inc_value("urna/processed_sections")
 
-        hash, _, filenames = SectionAuxParser.get_files(data)
+        hash, hashdate, filenames = SectionAuxParser.get_files(data)
         if hash == None:
             return
 
@@ -146,14 +134,15 @@ class UrnaSpider(BaseSpider):
 
             if not os.path.exists(local_path):
                 yield self.make_request(path, self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
-                    priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section, "hash": hash})
+                    priority=1, cb_kwargs={"hash": hash, "hashdate": hashdate})
             else:
+                self.index[filename] = self.index[filename]._replace(metadata=hash, index_date=hashdate)
                 self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 
-    def parse_ballot_box_file(self, response, state, city, zone, section, hash):
+    def parse_ballot_box_file(self, response, hash, hashdate):
         result = self.persist_response(response)
         if result.is_new_file:
-            self.index[result.filename] = result.index_entry._replace(metadata=hash)
+            self.index[result.filename] = result.index_entry._replace(metadata=hash, index_date=hashdate)
 
         self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 

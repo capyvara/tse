@@ -72,7 +72,7 @@ class Index():
         if not row:
             raise KeyError(filename)
         
-        return Index.Entry(row[0], row[1], row[2])      
+        return Index.Entry(row[0], row[1], row[2], row[3])      
 
     def __len__(self):
         row = self.con.execute("SELECT COUNT(*) FROM file_entries").fetchone()
