@@ -12,22 +12,11 @@ def get_dh_timestamp(data, d = "dg", h = "hg"):
 
 class IndexParser: 
     @staticmethod
-    def expand(state, data):
+    def expand(data):
         for entry in data["arq"]:
             filename = entry["nm"]
             filedate = datetime.datetime.strptime(entry["dh"], "%d/%m/%Y %H:%M:%S")
-
-            if filename == "ele-c.json":
-                continue
-
-            info = PathInfo(filename)
-            if (info.prefix == "cert" or info.prefix == "mun") and state != "br":
-                continue
-            
-            if info.state and state != info.state:
-                continue
-
-            yield info, filedate
+            yield filename, filedate
 
 class FixedParser:
     @staticmethod

@@ -87,6 +87,20 @@ class DivulgaSpider(BaseSpider):
 
         return priority
 
+    def expand_index(self, state, data):
+        for filename, filedate in IndexParser.expand(data):
+            if filename == "ele-c.json":
+                continue
+
+            info = PathInfo(filename)
+            if (info.prefix == "cert" or info.prefix == "mun") and state != "br":
+                continue
+            
+            if info.state and state != info.state:
+                continue
+
+            yield info, filedate
+
     def parse_index(self, response, election, state):
         result = self.persist_response(response)
 
@@ -100,7 +114,7 @@ class DivulgaSpider(BaseSpider):
 
         data = json.loads(result.contents)
         
-        priorities = ((i, d, self.get_file_priority(i)) for i,d in IndexParser.expand(state, data))
+        priorities = ((i, d, self.get_file_priority(i)) for i,d in self.expand_index(state, data))
         sorted_index = sorted(priorities, key = lambda t: t[2], reverse=True)
         for info, new_index_date, priority in sorted_index:
             size += 1
