@@ -3,9 +3,9 @@ import json
 import logging
 import os
 import re
-import time
+import hashlib
+
 import urllib.parse
-import zipfile
 from email.utils import parsedate_to_datetime, format_datetime
 from pyparsing import NamedTuple
 
@@ -15,6 +15,7 @@ from scrapy.utils.python import to_unicode
 
 from tse.common.index import Index
 from tse.common.pathinfo import PathInfo
+from tse.utils import log_progress
 
 
 class BaseSpider(scrapy.Spider):
@@ -24,7 +25,7 @@ class BaseSpider(scrapy.Spider):
         super().__init__(*args, **kwargs)
 
     def continue_requests(self, config_data, config_entry):
-        raise NotImplementedError(f'{self.__class__.__name__}.parse callback is not defined')
+        raise NotImplementedError(f"{self.__class__.__name__}.continue_requests callback is not defined")
 
     def start_requests(self):
         self.initialize()
@@ -67,9 +68,10 @@ class BaseSpider(scrapy.Spider):
             return None  
                   
     def get_http_cache_headers(self, response):
-        last_modified = self._rfc2822_to_datetime(response.headers[b"Last-Modified"])
-        etag = to_unicode(response.headers[b"etag"]).strip('"')
-        return (last_modified, etag)
+        last_modified = self._rfc2822_to_datetime(response.headers[b"Last-Modified"]) if b"Last-Modified" in response.headers else None
+        etag = to_unicode(response.headers[b"ETag"]).strip('"') if b"ETag" in response.headers else None
+        date = self._rfc2822_to_datetime(response.headers[b"Date"]) if b"Date" in response.headers else None
+        return (last_modified, etag, date)
 
     def make_request(self, path: str, *args, **kwargs):
         entry = self.index.get(os.path.basename(path))
@@ -81,6 +83,8 @@ class BaseSpider(scrapy.Spider):
             if entry.etag != None:
                 headers[b"ETag"] = f'"{entry.etag}"'
 
+            headers[b"Cache-Control"] = "max-age=0"
+
             meta = kwargs.setdefault("meta", {})
             meta.update({"handle_httpstatus_list": [304]})
 
@@ -90,7 +94,8 @@ class BaseSpider(scrapy.Spider):
     class PersistedResult(NamedTuple):
         local_path: str
         index_entry: Index.Entry
-        body: str = None
+        body: str
+        is_new_file: bool
 
         @property
         def contents(self) -> str:
@@ -100,43 +105,55 @@ class BaseSpider(scrapy.Spider):
             with open(self.local_path, "r") as f:
                 return f.read()
 
-        @property
-        def is_new_file(self) -> str:
-            return self.body is not None
+    def write_result_file(self, path, body, date):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(body)
 
-    def persist_response(self, response, index_date = None) -> PersistedResult:
+        dt_epoch = date.timestamp()
+        os.utime(path, (dt_epoch, dt_epoch))
+
+    def persist_response(self, response) -> PersistedResult:
         local_path = os.path.join(self.settings["FILES_STORE"], urllib.parse.urlparse(response.url).path.strip("/"))
         filename = os.path.basename(local_path)
 
-        last_modified, etag = self.get_http_cache_headers(response)
+        last_modified, etag, server_date = self.get_http_cache_headers(response)
         index_entry = self.index.get(filename)
 
         if response.status == 304:
-            if (index_entry and 
-                    (index_entry.last_modified == last_modified) and 
-                    (index_entry.etag == etag) and 
-                    os.path.exists(local_path)):
-                return self.PersistedResult(local_path, index_entry)
+            if index_entry and (index_entry.etag == etag) and os.path.exists(local_path):
+                return self.PersistedResult(local_path, index_entry, None, False)
             else:
                 # TODO invalidate/retry
                 raise ResponseFailed(response)
 
-        index_entry = Index.Entry(last_modified, etag, index_date)
+        last_modified = (last_modified or 
+                        server_date or 
+                        datetime.datetime.utcnow().replace(tzinfo=None))
 
-        index_version = self.archive_version(filename) if self.keep_old_versions else 0
+        etag = etag or hashlib.md5(response.body).hexdigest()
+
+        # Same indexed contents (etag or body md5)
+        if index_entry and (index_entry.etag == etag):
+            if not os.path.exists(local_path):
+                self.write_result_file(local_path, response.body, last_modified)
+            if index_entry.last_modified != last_modified:    
+                self.index[filename] = index_entry._replace(last_modified=last_modified)
+
+            return self.PersistedResult(local_path, index_entry, response.body, False)
+
+        # We have a new file
+        index_entry = Index.Entry(last_modified, etag)
+
+        index_version = self.archive_version(local_path) if self.keep_old_versions else 0
         if index_version != 0:
             self.index.add_version(filename, index_version + 1, index_entry)
         else:
             self.index[filename] = index_entry
 
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        with open(local_path, "wb") as f:
-            f.write(response.body)
+        self.write_result_file(local_path, response.body, last_modified)
 
-        dt_epoch = last_modified.timestamp()
-        os.utime(local_path, (dt_epoch, dt_epoch))
-
-        return self.PersistedResult(local_path, index_entry, response.body)
+        return self.PersistedResult(local_path, index_entry, response.body, True)
 
     @property
     def plea(self):
@@ -159,6 +176,9 @@ class BaseSpider(scrapy.Spider):
         return self.settings["KEEP_OLD_VERSIONS"]
 
     def initialize(self):
+        if type(self) == BaseSpider:
+            raise NotImplementedError(f"BaseSpider is meant to be a inherited from")
+
         logging.info("Host: %s", self.settings["HOST"])
         logging.info("Environment: %s", self.settings["ENVIRONMENT"])
         logging.info("Cycle: %s", self.settings["CYCLE"])
@@ -170,13 +190,14 @@ class BaseSpider(scrapy.Spider):
         db_dir = os.path.join(self.settings["FILES_STORE"], self.settings["ENVIRONMENT"])
         os.makedirs(db_dir, exist_ok=True)
         self.index = Index(os.path.join(db_dir, f"index_{self.name}.db"))
-
-        self.validate_index()
-
         logging.info("Index size %d", len(self.index))
 
+        if self.settings["VALIDATE_INDEX"]:
+            self.validate_index()
+
     def closed(self, reason):
-        self.index.close()
+        if hasattr(self, "index"):
+            self.index.close()
 
     def validate_index_entry(self, filename, entry: Index.Entry):
         info = PathInfo(filename)
@@ -185,12 +206,15 @@ class BaseSpider(scrapy.Spider):
 
         local_path = self.get_local_path(info.path)
         if not os.path.exists(local_path):
-            logging.debug("Local path not found, skipping index %s", info.filename)
+            logging.debug("Index: Local path not found %s", info.filename)
             return False
 
         modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_path))
-        if entry.last_modified != modified_time:
-            logging.debug("Modified date mismatch, skipping index %s %s > %s", info.filename, modified_time, entry.index_date)
+        
+        # Some tolerance, as some processes may change precision (ex: unzipping has two seconds)
+        delta = modified_time - entry.last_modified
+        if abs(delta.total_seconds()) > 2:
+            logging.debug("Index: Modified date mismatch %s %s > %s", info.filename, modified_time, entry.last_modified)
             return False
 
         return True
@@ -198,8 +222,9 @@ class BaseSpider(scrapy.Spider):
     def validate_index(self):
         logging.info("Validating index...")
 
-        invalid = [f for f, e in self.index.items() if not self.validate_index_entry(f, e)]
+        invalid = [f for f, e in log_progress(self.index.items(), len(self.index)) if not self.validate_index_entry(f, e)]
         if len(invalid) > 0:
             self.index.remove_many(invalid)
-            logging.info("Removed %d invalid index entries", len(invalid))
+            logging.info("Removed %d invalid index entries, new size:", len(invalid), len(self.index))
+            
 

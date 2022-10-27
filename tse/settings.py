@@ -43,6 +43,9 @@ AUTOTHROTTLE_TARGET_CONCURRENCY = 50.0
 DOWNLOAD_TIMEOUT = 10
 RETRY_TIMES = 5
 
+# Debug stuff
+#VALIDATE_INDEX = True
+
 # States to get information from, beware that without "br" some shared files such as config woudn't be downloaded
 STATES = ["br", "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go", "ma", "mg", "ms", "mt", "pa", 
             "pb", "pe", "pi", "pr", "rj", "rn", "ro", "rr", "rs", "sc", "se", "sp", "to", "zz"]
@@ -80,10 +83,10 @@ ENVIRONMENT = "oficial"
 CYCLE = "ele2022"
 
 # 1st round
-PLEA = "406"
-ELECTIONS = ["544", "546", "548"]
+# PLEA = "406"
+# ELECTIONS = ["544", "546", "548"]
 
 # 2nd round
-# PLEA = "407"
-# ELECTIONS = ["545", "547"]
+PLEA = "407"
+ELECTIONS = ["545", "547"]
 

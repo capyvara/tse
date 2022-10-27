@@ -155,7 +155,7 @@ class DivulgaSpider(BaseSpider):
         if not index_date:
             return
 
-        result = self.persist_response(response, index_date)
+        result = self.persist_response(response)
 
         # Server may send a version that wasn't updated yet so keep the old index date
         if not result.is_new_file:
@@ -169,6 +169,8 @@ class DivulgaSpider(BaseSpider):
                 yield retry_request
 
             return
+
+        self.index[info.filename] = result.index_entry._replace(index_date=index_date)
 
         if not self.crawler.crawling:
             return
@@ -208,5 +210,9 @@ class DivulgaSpider(BaseSpider):
             logging.info("Added pictures %d, total pending %d", added, len(self.pending))
 
     def parse_picture(self, response, filename, index_date):
-        self.persist_response(response, index_date)
-        self.pending.pop(filename, None)
+        index_date = self.pending.pop(filename, None)
+        if not index_date:
+            return
+
+        result = self.persist_response(response)
+        self.index[filename] = result.index_entry._replace(index_date=index_date)
