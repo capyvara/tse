@@ -72,7 +72,7 @@ class DivulgaSpider(BaseSpider):
                 priority += 10
     
         # Configuration, fixed, etc (mostly unchanging files)
-        if info.type in ("c", "a", "cm", "f", "jpeg"):
+        if info.type in ("c", "a", "cm", "f") or info.ext == "jpeg":
             priority += 6
         # Simplified results, totalling status
         elif info.type in ("r", "ab", "t", "e"):

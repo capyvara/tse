@@ -28,15 +28,18 @@ class PathInfo:
         self.id_ballot_box = None
         self.timestamp = None
         self.seq = None
+        self.match = None
 
         if filename == "ele-c.json":
             self.path = f"comum/config/{filename}"
             self.type = "c"
             self.ext = "json"
+            self.match = "config"
             return
 
         if os.path.splitext(filename)[1] == ".jpeg":
-            self.ext = ".jpeg"
+            self.ext = "jpeg"
+            self.match = "picture"
             return 
 
         # Divulgacao files + Urna section config
@@ -51,6 +54,7 @@ class PathInfo:
             self.ver = result["ver"].lstrip("0") if result["ver"] else None
             self.type = result.group("type")
             self.ext = result.group("ext")
+            self.match = "regular"
 
             if self.type in ("a", "cm"):
                 self.path = f"{self.election}/config/{filename}"
@@ -75,6 +79,7 @@ class PathInfo:
             self.section = result["section"].lstrip("0") if result["section"] else None
             self.type = result.group("type")
             self.ext = result.group("ext")
+            self.match = "section_aux"
 
             if self.type == "aux":
                 self.path = f"arquivo-urna/{self.plea}/dados/{self.state}/{self.city:0>5}/{self.zone:0>4}/{self.section:0>4}/{filename}"
@@ -89,6 +94,7 @@ class PathInfo:
             self.zone = result["zone"].lstrip("0") if result["zone"] else None
             self.section = result["section"].lstrip("0") if result["section"] else None
             self.ext = result.group("ext")
+            self.match = "ballot_box"
             return
 
         # Ballot box log contingency
@@ -98,9 +104,13 @@ class PathInfo:
             self.timestamp = datetime.strptime(self.timestamp, r"%d%m%Y%H%M%S") if result["timestamp"] else None
             self.seq = result.group("seq")
             self.ext = result.group("ext")
+            self.match = "ballot_box_contingency"
             return
 
         raise ValueError("Filename format not recognized")
+
+    def make_ballot_box_file_path(self, state, hash):
+        return PathInfo.get_ballot_box_file_path(self.plea, state, self.city, self.zone, self.section, hash, self.filename)
 
     @staticmethod
     def get_local_path(settings, path):

@@ -1,4 +1,5 @@
 import datetime
+import glob
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ from scrapy.utils.python import to_unicode
 
 from tse.common.index import Index
 from tse.common.pathinfo import PathInfo
+from tse.parsers import CityConfigParser
 from tse.utils import log_progress
 
 
@@ -23,6 +25,7 @@ class BaseSpider(scrapy.Spider):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._city_state_map = None
 
     def continue_requests(self, config_data, config_entry):
         raise NotImplementedError(f"{self.__class__.__name__}.continue_requests callback is not defined")
@@ -203,10 +206,38 @@ class BaseSpider(scrapy.Spider):
         if hasattr(self, "index"):
             self.index.close()
 
+    def get_state(self, city):
+        if self._city_state_map:
+            return self._city_state_map[city]
+        
+        cities_config_list = glob.glob(self.get_local_path(f"[0-9]*/config/mun-*-cm.json"), recursive=True)
+
+        config_path = None
+        if len(cities_config_list) > 0:
+            config_path = sorted(cities_config_list, key=os.path.getmtime, reverse=True)[0]
+        else:
+            config_path = "data/mun-default-cm.json"
+
+        with open(config_path, "r") as f:
+            data = json.load(f)
+            map = ((ccity, cstate) for cstate, ccity, _, _, _, _ in CityConfigParser.expand_cities(data))
+            self._city_state_map = dict(map)
+        
+        return self._city_state_map[city]
+
     def validate_index_entry(self, filename, entry: Index.Entry):
         info = PathInfo(filename)
+        
         if not info.path:
-            return True
+            if info.match == "ballot_box":
+                state = self.get_state(info.city)
+                if not state or not entry.metadata:
+                    logging.debug("Index: Missing meta information %s", info.filename)
+                    return False
+                info.path = info.make_ballot_box_file_path(state, entry.metadata)
+            else:
+                logging.debug("Index: Missing path %s", info.filename)
+                return False
 
         local_path = self.get_local_path(info.path)
         if not os.path.exists(local_path):
@@ -215,7 +246,7 @@ class BaseSpider(scrapy.Spider):
 
         modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_path)).replace(microsecond=0)
         
-        # Some tolerance, as some processes may change precision (ex: unzipping has two seconds)
+        # Some tolerance, as some processes may change precision (ex: unzipping has two seconds precision)
         delta = modified_time - entry.last_modified
         if abs(delta.total_seconds()) > 2:
             logging.debug("Index: Modified date mismatch %s %s > %s", info.filename, modified_time, entry.last_modified)
