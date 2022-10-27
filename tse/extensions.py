@@ -66,12 +66,14 @@ class LogStatsUrna:
     def log(self, spider):
         sections = self.stats.get_value("urna/sections", 0)
         processed_sections = self.stats.get_value("urna/processed_sections", 0)
+        not_found_sections = self.stats.get_value("urna/not_found_sections", 0)
         ballot_box_files = self.stats.get_value("urna/ballot_box_files", 0)
         processed_ballot_box_files = self.stats.get_value("urna/processed_ballot_box_files", 0)
 
-        logger.info("Urna - sections: %(sections)d, processed_sections: %(processed_sections)d, ballot_box_files: %(ballot_box_files)d, processed_ballot_box_files: %(processed_ballot_box_files)d", 
+        logger.info("Urna - sections: %(sections)d, processed_sections: %(processed_sections)d, not_found_sections: %(not_found_sections)d, ballot_box_files: %(ballot_box_files)d, processed_ballot_box_files: %(processed_ballot_box_files)d", 
             {"sections": sections, 
             "processed_sections": processed_sections, 
+            "not_found_sections": not_found_sections,
             "ballot_box_files": ballot_box_files, 
             "processed_ballot_box_files": processed_ballot_box_files}, 
             extra={"spider": spider})

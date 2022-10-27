@@ -10,6 +10,7 @@ class Index():
         last_modified: datetime.datetime
         etag: str
         index_date: datetime.datetime = None
+        metadata: bytes = None
 
     def __init__(self, persist_path=None):
         self.con = sqlite3.connect(persist_path if persist_path else ":memory:", 
@@ -27,6 +28,7 @@ class Index():
                 "  last_modified TIMESTAMP NOT NULL,"
                 "  etag TEXT NOT NULL,"
                 "  index_date TIMESTAMP,"
+                "  metadata BLOB,"
                 "  PRIMARY KEY(filename,version)"
                 ") WITHOUT ROWID"
             ))
@@ -41,7 +43,7 @@ class Index():
 
             self.con.execute((
                 "CREATE VIEW IF NOT EXISTS file_items AS"
-                " SELECT file_entries.filename, file_entries.version, last_modified, etag, index_date"
+                " SELECT file_entries.filename, file_entries.version, last_modified, etag, index_date, metadata"
                 " FROM file_entries NATURAL LEFT JOIN file_versions;"
             ))
 
@@ -64,7 +66,7 @@ class Index():
 
     def __getitem__(self, filename: str) -> Entry:
         row = self.con.execute((
-            "SELECT last_modified, etag, index_date FROM file_entries" 
+            "SELECT last_modified, etag, index_date, metadata FROM file_entries" 
             " NATURAL LEFT JOIN file_versions WHERE file_entries.filename = :fn"), {"fn": filename}).fetchone()
 
         if not row:
@@ -81,9 +83,9 @@ class Index():
             row = self.con.execute("SELECT version FROM file_entries WHERE filename=:fn", {"fn": filename}).fetchone()
             version = row[0] if row else 1
 
-            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx)", 
+            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx, :meta)", 
                     {"fn": filename, "ver": version, 
-                    "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date})
+                    "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date, "meta": entry.metadata})
 
             self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", 
                     {"fn": filename, "ver": version})
@@ -97,9 +99,9 @@ class Index():
             yield row[0]
 
     def items(self) -> Iterable[Tuple[str, Entry]]: 
-        for row in self.con.execute(("SELECT file_entries.filename, last_modified, etag, index_date FROM file_entries"
+        for row in self.con.execute(("SELECT file_entries.filename, last_modified, etag, index_date, metadata FROM file_entries"
                                      " NATURAL LEFT JOIN file_versions")):
-            yield (row[0], Index.Entry(row[1], row[2], row[3]))
+            yield (row[0], Index.Entry(row[1], row[2], row[3], row[4]))
 
     def add(self, filename: str, entry: Entry):
         self[filename] = entry
@@ -125,9 +127,9 @@ class Index():
             versions = dict(rows) if rows else dict()
 
             replace_data = list({"fn": d["fn"], "ver": versions.get(d["fn"], 1), 
-                "lmod": d["e"].last_modified, "etag": d["e"].etag, "idx": d["e"].index_date} for d in data)
+                "lmod": d["e"].last_modified, "etag": d["e"].etag, "idx": d["e"].index_date, "meta": d["e"].meta} for d in data)
 
-            self.con.executemany("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx)", replace_data)
+            self.con.executemany("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx, :meta)", replace_data)
             self.con.executemany("REPLACE INTO file_entries VALUES (:fn, :ver)", replace_data)
 
     def remove_many(self, iterable: Iterable[str]):
@@ -142,7 +144,16 @@ class Index():
     def add_version(self, filename: str, version: int, entry: Entry):
         with self.con:
             data = {"fn": filename, "ver": version, 
-                "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date}
+                "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date, "meta": entry.meta}
 
-            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag: :idx)", data)
+            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag: :idx, :meta)", data)
             self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", data)
+
+    def optimize(self):
+        with self.con:
+            self.con.execute("PRAGMA optimize")
+ 
+    def vacuum(self):
+        with self.con:
+            self.con.execute("VACUUM")
+ 

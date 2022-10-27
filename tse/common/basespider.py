@@ -105,6 +105,10 @@ class BaseSpider(scrapy.Spider):
             with open(self.local_path, "r") as f:
                 return f.read()
 
+        @property
+        def filename(self) -> str:
+            return os.path.basename(self.local_path)
+
     def write_result_file(self, path, body, date):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
@@ -225,6 +229,9 @@ class BaseSpider(scrapy.Spider):
         invalid = [f for f, e in log_progress(self.index.items(), len(self.index)) if not self.validate_index_entry(f, e)]
         if len(invalid) > 0:
             self.index.remove_many(invalid)
+            self.index.vacuum()
             logging.info("Removed %d invalid index entries, new size: %d", len(invalid), len(self.index))
+
+        self.index.optimize()
             
 

@@ -123,6 +123,7 @@ class UrnaSpider(BaseSpider):
     def errback_section(self, failure):
         if failure.check(HttpError) and failure.value.response.status == 403:
             logging.debug("Section config not found %s", str(failure.request))
+            self.crawler.stats.inc_value("urna/not_found_sections")
             return
 
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
@@ -145,12 +146,15 @@ class UrnaSpider(BaseSpider):
 
             if not os.path.exists(local_path):
                 yield self.make_request(path, self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
-                    priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
+                    priority=1, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section, "hash": hash})
             else:
                 self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 
-    def parse_ballot_box_file(self, response, state, city, zone, section):
-        self.persist_response(response)
+    def parse_ballot_box_file(self, response, state, city, zone, section, hash):
+        result = self.persist_response(response)
+        if result.is_new_file:
+            self.index[result.filename] = result.index_entry._replace(metadata=hash)
+
         self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 
     def errback_ballot_box_file(self, failure):
