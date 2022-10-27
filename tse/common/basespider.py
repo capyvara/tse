@@ -209,7 +209,7 @@ class BaseSpider(scrapy.Spider):
             logging.debug("Index: Local path not found %s", info.filename)
             return False
 
-        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_path))
+        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_path)).replace(microsecond=0)
         
         # Some tolerance, as some processes may change precision (ex: unzipping has two seconds)
         delta = modified_time - entry.last_modified
@@ -225,6 +225,6 @@ class BaseSpider(scrapy.Spider):
         invalid = [f for f, e in log_progress(self.index.items(), len(self.index)) if not self.validate_index_entry(f, e)]
         if len(invalid) > 0:
             self.index.remove_many(invalid)
-            logging.info("Removed %d invalid index entries, new size:", len(invalid), len(self.index))
+            logging.info("Removed %d invalid index entries, new size: %d", len(invalid), len(self.index))
             
 
