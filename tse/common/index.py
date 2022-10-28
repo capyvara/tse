@@ -37,7 +37,7 @@ class Index():
                 "CREATE TABLE IF NOT EXISTS file_entries ("
                 "  filename TEXT PRIMARY KEY,"
                 "  version INTEGER,"
-                "  FOREIGN KEY(filename,version) REFERENCES file_versions(filename, version)"
+                "  FOREIGN KEY(filename,version) REFERENCES file_versions(filename,version)"
                 ") WITHOUT ROWID"
             ))
 
@@ -114,7 +114,8 @@ class Index():
 
     def discard(self, filename: str):
         with self.con:
-            self.con.execute("DELETE FROM file_entries WHERE filename=:filename", {"filename": filename})
+            self.con.execute("DELETE FROM file_entries WHERE filename=:fname", {"fname": filename})
+            self.con.execute("DELETE FROM file_versions WHERE filename=:fname", {"fname": filename})
 
     def add_many(self, iterable: Iterable[tuple[str,Entry]]):
         with self.con:
@@ -134,8 +135,9 @@ class Index():
 
     def remove_many(self, iterable: Iterable[str]):
         with self.con:
-            data = ({"fn": f} for f in iterable)
+            data = [{"fn": f} for f in iterable]
             self.con.executemany("DELETE FROM file_entries WHERE filename=:fn", data)
+            self.con.executemany("DELETE FROM file_versions WHERE filename=:fn", data)
 
     def get_current_version(self, filename: str, default: int = 0 ) -> int:
         row = self.con.execute("SELECT version FROM file_entries WHERE filename=:fn", {"fn": filename}).fetchone()

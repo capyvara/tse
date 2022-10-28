@@ -16,9 +16,6 @@ class DivulgaSpider(BaseSpider):
     name = "divulga"
 
     custom_settings = {
-        "DOWNLOADER_MIDDLEWARES": {
-           'tse.middlewares.DeferMiddleware': 543,
-        },
         "EXTENSIONS": {
             'tse.extensions.LogStatsDivulga': 543,
         }
@@ -48,11 +45,14 @@ class DivulgaSpider(BaseSpider):
         self.downloading.discard(filename)
 
     def generate_requests_index(self, election):
+        idx = self.elections.index(election)
+        priority = 1000 + ((len(self.elections) - idx) * 100) 
+
         for state in self.states:
             logging.debug("Scheduling index file for %s-%s", election, state)
             path = PathInfo.get_state_index_path(election, state)
             yield self.make_request(path, self.parse_index, errback=self.errback_index, 
-                priority = 1000 if state == "br" else 900,
+                priority = priority + (50 if state == "br" else 0),
                 cb_kwargs={"election": election, "state":state})
 
     # Higher is scheduled first
@@ -62,6 +62,14 @@ class DivulgaSpider(BaseSpider):
             return 3
         
         priority = 0
+
+        if info.election:
+            # Favor federal
+            try:
+                idx = self.elections.index(info.election)
+                priority += (len(self.elections) - idx) * 30
+            except ValueError:
+                pass
         
         if info.state:
             # Countrywise
@@ -72,7 +80,7 @@ class DivulgaSpider(BaseSpider):
                 priority += 10
     
         # Configuration, fixed, etc (mostly unchanging files)
-        if info.type in ("c", "a", "cm", "f") or info.ext == "jpeg":
+        if info.type in ("c", "a", "cm", "f"):
             priority += 6
         # Simplified results, totalling status
         elif info.type in ("r", "ab", "t", "e"):
@@ -212,21 +220,24 @@ class DivulgaSpider(BaseSpider):
             if filename in self.pending:
                 continue
 
+            metadata = {"election": info.election, "cand_state": cand_state}
+
             local_path = self.get_local_path(path)
             if not os.path.exists(local_path):
                 self.pending[filename] = index_date
                 added += 1
-                logging.debug("Scheduling picture %s", filename)
-                yield self.make_request(path, self.parse_picture, priority=self.get_file_priority(info), 
-                    cb_kwargs={"filename": filename, "index_date": index_date})
+                priority = self.get_file_priority(info) - 4
+                logging.debug("Scheduling picture %s, p: %d", filename, priority)
+                yield self.make_request(path, self.parse_picture, priority=priority, 
+                    cb_kwargs={"filename": filename, "index_date": index_date, "metadata": metadata})
 
         if added > 0:
             logging.info("Added pictures %d, total pending %d", added, len(self.pending))
 
-    def parse_picture(self, response, filename, index_date):
+    def parse_picture(self, response, filename, index_date, metadata):
         index_date = self.pending.pop(filename, None)
         if not index_date:
             return
 
         result = self.persist_response(response)
-        self.index[filename] = result.index_entry._replace(index_date=index_date)
+        self.index[filename] = result.index_entry._replace(index_date=index_date, metadata=json.dumps(metadata))

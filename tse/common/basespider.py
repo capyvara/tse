@@ -42,7 +42,7 @@ class BaseSpider(scrapy.Spider):
         self.initialize()
         if self.shutdown:
             return
-            
+
         yield from self.query_common()
 
     def query_common(self):
@@ -88,10 +88,10 @@ class BaseSpider(scrapy.Spider):
         return (last_modified, etag, date)
 
     def make_request(self, path: str, *args, **kwargs):
+        headers = kwargs.setdefault("headers", {})
+
         entry = self.index.get(os.path.basename(path))
         if entry and os.path.exists(self.get_local_path(path)):
-            headers = kwargs.setdefault("headers", {})
-
             if entry.last_modified != None:
                 headers[b"If-Modified-Since"] = format_datetime(entry.last_modified.replace(tzinfo=datetime.timezone.utc), True)
             if entry.etag != None:
@@ -101,6 +101,8 @@ class BaseSpider(scrapy.Spider):
 
             meta = kwargs.setdefault("meta", {})
             meta.update({"handle_httpstatus_list": [304]})
+        else:
+            headers[b"Cache-Control"] = "no-cache"
 
         kwargs.setdefault("dont_filter", True)
         return scrapy.Request(self.get_full_url(path), *args, **kwargs)
@@ -210,7 +212,7 @@ class BaseSpider(scrapy.Spider):
 
         db_dir = os.path.join(self.settings["FILES_STORE"], self.settings["ENVIRONMENT"])
         os.makedirs(db_dir, exist_ok=True)
-        self.index = Index(os.path.join(db_dir, f"index_{self.name}.db"))
+        self.index = Index(os.path.join(db_dir, f"index_{self.name}_{self.plea}.db"))
         logging.info("Index size %d", len(self.index))
 
         if self.settings["VALIDATE_INDEX"]:
@@ -229,21 +231,18 @@ class BaseSpider(scrapy.Spider):
         if self._city_state_map:
             return self._city_state_map[city]
 
-        config_paths = ["data/mun-default-cm.json"]
-
-        # Since index is shared we must account for new entries that may be added on later elections
-        for election in sorted(self.find_local_path_elections()):
-            config_path = self.get_local_path(PathInfo.get_cities_config_path(election))
-            if os.path.exists(config_path):
-                config_paths.append(config_path)
+        config_paths = ["data/mun-default-cm.json", PathInfo.get_cities_config_path(self.elections[0])]
 
         self._city_state_map = {}
 
         for config_path in config_paths:
-            with open(config_path, "r") as f:
-                data = json.load(f)
-                map = {ccity: cstate for cstate, ccity, _, _, _, _ in CityConfigParser.expand_cities(data)}
-                self._city_state_map.update(map)
+            try:
+                with open(config_path, "r") as f:
+                    data = json.load(f)
+                    map = {ccity: cstate for cstate, ccity, _, _, _, _ in CityConfigParser.expand_cities(data)}
+                    self._city_state_map.update(map)
+            except FileNotFoundError:
+                continue
         
         return self._city_state_map[city]
 
@@ -252,11 +251,19 @@ class BaseSpider(scrapy.Spider):
         
         if not info.path:
             if info.match == "ballot_box":
-                state = self.get_state(info.city)
-                if not state or not entry.metadata:
+                if not entry.metadata:
                     logging.debug("Index: Missing meta information %s", info.filename)
                     return False
-                info.path = info.make_ballot_box_file_path(state, entry.metadata)
+
+                meta = json.loads(entry.metadata)
+                info.path = info.make_ballot_box_file_path(meta["state"], meta["hash"])
+            elif info.match == "picture":
+                if not entry.metadata:
+                    logging.debug("Index: Missing meta information %s", info.filename)
+                    return False
+
+                meta = json.loads(entry.metadata)
+                info.path = info.make_picture_file_path(meta["election"], meta["cand_state"])
             else:
                 logging.debug("Index: Missing path %s", info.filename)
                 return False
@@ -272,6 +279,14 @@ class BaseSpider(scrapy.Spider):
         delta = modified_time - entry.last_modified
         if abs(delta.total_seconds()) > 2:
             logging.debug("Index: Modified date mismatch %s %s > %s", info.filename, modified_time, entry.last_modified)
+            return False
+
+        if info.plea and info.plea != self.plea:
+            logging.debug("Index: Plea mismatch %s %s > %s", info.filename, info.plea, self.plea)
+            return False
+
+        if info.election and not info.election in self.elections:
+            logging.debug("Index: Election mismatch %s %s > %s", info.filename, info.election, self.elections)
             return False
 
         return True

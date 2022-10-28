@@ -132,17 +132,18 @@ class UrnaSpider(BaseSpider):
             path = PathInfo.get_ballot_box_file_path(self.plea, state, city, zone, section, hash, filename)
             local_path = self.get_local_path(path)
 
+            metadata = {"state": state, "hash": hash}
+
             if not os.path.exists(local_path):
                 yield self.make_request(path, self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
-                    priority=1, cb_kwargs={"hash": hash, "hashdate": hashdate})
+                    priority=1, cb_kwargs={"hashdate": hashdate, "metadata": metadata})
             else:
-                self.index[filename] = self.index[filename]._replace(metadata=hash, index_date=hashdate)
                 self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 
-    def parse_ballot_box_file(self, response, hash, hashdate):
+    def parse_ballot_box_file(self, response, hashdate, metadata):
         result = self.persist_response(response)
         if result.is_new_file:
-            self.index[result.filename] = result.index_entry._replace(metadata=hash, index_date=hashdate)
+            self.index[result.filename] = result.index_entry._replace(index_date=hashdate, metadata=json.dumps(metadata))
 
         self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 

@@ -27,6 +27,14 @@ SPIDER_MIDDLEWARES = {
     'scrapy.spidermiddlewares.offsite.OffsiteMiddleware': None,
 }
 
+# Optimization
+DOWNLOADER_MIDDLEWARES = {
+    'tse.middlewares.DeferMiddleware': 543,
+    'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,    
+    'scrapy.downloadermiddlewares.retry.RetryMiddleware': None,
+    'tse.middlewares.TooManyRequestsRetryMiddleware': 432,
+}
+
 # Where to put downloaded files
 FILES_STORE = "data/download"
 
@@ -38,9 +46,10 @@ CONCURRENT_REQUESTS_PER_DOMAIN = 200
 # How aggressive should the scrapping be done, watch out to not flood the server
 AUTOTHROTTLE_ENABLED = True
 AUTOTHROTTLE_START_DELAY = 0.01
-AUTOTHROTTLE_TARGET_CONCURRENCY = 50.0
+AUTOTHROTTLE_MAX_DELAY = 10
+AUTOTHROTTLE_TARGET_CONCURRENCY = 10.0
 
-DOWNLOAD_TIMEOUT = 10
+DOWNLOAD_TIMEOUT = 20
 RETRY_TIMES = 5
 
 # Debug stuff
@@ -83,10 +92,10 @@ ENVIRONMENT = "oficial"
 CYCLE = "ele2022"
 
 # 1st round
-# PLEA = "406"
-# ELECTIONS = ["544", "546", "548"]
+PLEA = "406"
+ELECTIONS = ["544", "546"]
 
 # 2nd round
-PLEA = "407"
-ELECTIONS = ["545", "547"]
+# PLEA = "407"
+# ELECTIONS = ["545", "547"]
 

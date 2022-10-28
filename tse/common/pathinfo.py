@@ -29,6 +29,7 @@ class PathInfo:
         self.timestamp = None
         self.seq = None
         self.match = None
+        self.sqcand = None
 
         if filename == "ele-c.json":
             self.path = f"comum/config/{filename}"
@@ -37,7 +38,9 @@ class PathInfo:
             self.match = "config"
             return
 
-        if os.path.splitext(filename)[1] == ".jpeg":
+        root, ext = os.path.splitext(filename)
+        if ext == ".jpeg":
+            self.sqcand = root
             self.ext = "jpeg"
             self.match = "picture"
             return 
@@ -109,8 +112,16 @@ class PathInfo:
 
         raise ValueError("Filename format not recognized")
 
+    def __str__(self) -> str:
+        return f"<{self.filename}>"
+
+    __repr__ = __str__
+
     def make_ballot_box_file_path(self, state, hash):
         return PathInfo.get_ballot_box_file_path(self.plea, state, self.city, self.zone, self.section, hash, self.filename)
+
+    def make_picture_file_path(self, election, cand_state):
+        return PathInfo.get_picture_path(election, cand_state, self.sqcand)
 
     @staticmethod
     def get_local_path(settings, path):
