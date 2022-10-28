@@ -49,6 +49,10 @@ AUTOTHROTTLE_START_DELAY = 0.01
 AUTOTHROTTLE_MAX_DELAY = 10
 AUTOTHROTTLE_TARGET_CONCURRENCY = 10.0
 
+# It seems to be using x-waf-rate-limit to ~20000request / 5min - > ~4000/min -> ~66/s -> ~0.015 min delay
+# https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html 
+DOWNLOAD_DELAY = 0.016
+
 DOWNLOAD_TIMEOUT = 20
 RETRY_TIMES = 5
 

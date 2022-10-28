@@ -7,8 +7,6 @@ from scrapy.utils.response import response_status_message
 import twisted.internet.task
 from twisted.internet import reactor
 
-from fake_useragent import UserAgent
-
 DELAY_META = '__defer_delay'
 
 logger = logging.getLogger(__name__)
@@ -27,57 +25,43 @@ class DeferMiddleware(object):
 
         return twisted.internet.task.deferLater(reactor, delay, lambda: None)
 
-
+# TODO: Allow bursting
+# https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html 
 class TooManyRequestsRetryMiddleware(RetryMiddleware):
     def __init__(self, crawler):
         super(TooManyRequestsRetryMiddleware, self).__init__(crawler.settings)
         self.crawler = crawler
-        self.user_agent = UserAgent()
-        self.current_agent = self.user_agent.random
-        self.rotate_count = 0
-        self.backoff_time = 0.5
+        self.backoff_time = 1
+        self.response_count = 0
 
     @classmethod
     def from_crawler(cls, crawler):
         return cls(crawler)
 
-    def rotate_agent(self, force = False):
-        self.rotate_count += 1
-        if force or self.rotate_count % 10 == 0:
-            self.current_agent = self.user_agent.random        
-
-    def process_request(self, request, spider):
-        self.rotate_agent()
-        request.headers.setdefault('User-Agent', self.current_agent)
-
     def process_response(self, request, response, spider):
+        self.response_count += 1
+
         if request.meta.get('dont_retry', False):
             return response
         elif response.status == 429:
-            self.backoff_time = min(self.backoff_time * 1.5, 5)
+            logger.warning("HTTP 429 received, backoff for %.2f seconds, rc: %d", self.backoff_time, self.response_count)
 
-            logger.warning("HTTP 429 received, backoff for %.2f seconds", self.backoff_time)
-
-            key, slot = self._get_slot(request, spider)
+            slot = self._get_slot(request, spider)
             slot.delay = self.backoff_time
+
+            self.backoff_time = min(self.backoff_time * 1.5, 5)
 
             return self.check_retry(request, response, spider)
         elif response.status in self.retry_http_codes:
             return self.check_retry(request, response, spider)
 
-        self.backoff_time = 0.5
+        self.backoff_time = 1
         return response
 
     def check_retry(self, request, response, spider):
-        self.rotate_agent(True)
         reason = response_status_message(response.status)
-        retry = self._retry(request, reason, spider)
-        if retry:
-            retry.headers['User-Agent'] = self.current_agent
-            return retry
-        
-        return response
+        return self._retry(request, reason, spider) or response
 
     def _get_slot(self, request, spider):
         key = request.meta.get('download_slot')
-        return key, self.crawler.engine.downloader.slots.get(key)
+        return self.crawler.engine.downloader.slots.get(key)

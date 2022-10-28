@@ -304,21 +304,6 @@ python-versions = "*"
 tests = ["asttokens", "littleutils", "pytest", "rich"]
 
 [[package]]
-name = "fake-useragent"
-version = "0.1.12"
-description = "Up to date simple useragent faker with real world database"
-category = "main"
-optional = false
-python-versions = "*"
-develop = false
-
-[package.source]
-type = "git"
-url = "https://github.com/danger89/fake-useragent.git"
-reference = "14abc9e645bfb0bf72593fff95e5df90da7bb128"
-resolved_reference = "14abc9e645bfb0bf72593fff95e5df90da7bb128"
-
-[[package]]
 name = "fastjsonschema"
 version = "2.16.2"
 description = "Fastest Python implementation of JSON schema"
@@ -1782,7 +1767,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "e5e559efd619f863f850536b56809f5f4481757bf3f69ee990406cfbde8c6024"
+content-hash = "208371b38f50e0126ea1ea1de25f193ad1d824ae7d8318370b08accc2407a68f"
 
 [metadata.files]
 anyio = [
@@ -2099,7 +2084,6 @@ executing = [
     {file = "executing-1.1.1-py2.py3-none-any.whl", hash = "sha256:236ea5f059a38781714a8bfba46a70fad3479c2f552abee3bbafadc57ed111b8"},
     {file = "executing-1.1.1.tar.gz", hash = "sha256:b0d7f8dcc2bac47ce6e39374397e7acecea6fdc380a6d5323e26185d70f38ea8"},
 ]
-fake-useragent = []
 fastjsonschema = [
     {file = "fastjsonschema-2.16.2-py3-none-any.whl", hash = "sha256:21f918e8d9a1a4ba9c22e09574ba72267a6762d47822db9add95f6454e51cc1c"},
     {file = "fastjsonschema-2.16.2.tar.gz", hash = "sha256:01e366f25d9047816fe3d288cbfc3e10541daf0af2044763f3d0ade42476da18"},
