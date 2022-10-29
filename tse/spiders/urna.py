@@ -1,4 +1,4 @@
-import json
+import orjson
 import logging
 import os
 
@@ -28,8 +28,8 @@ class UrnaSpider(BaseSpider):
         super().__init__(*args, **kwargs)
 
     def load_json(self, path):
-        with open(path, "r") as f:
-            return json.load(f)
+        with open(path, "rb") as f:
+            return orjson.load(f.read())
 
     def query_sigfile(self, source_path, force=False):
         sig_path = os.path.splitext(source_path)[0] + ".sig"
@@ -69,7 +69,7 @@ class UrnaSpider(BaseSpider):
                     yield sig_query
 
                 yield from self.query_sections(state, config_data)                
-            except (FileNotFoundError, json.JSONDecodeError):
+            except (FileNotFoundError, orjson.JSONDecodeError):
                 logging.info("Scheduling sections config file for %s %s", self.plea, state)
                 yield self.make_request(path, self.parse_section_config, errback=self.errback_section_config,
                     priority=4, cb_kwargs={"state": state})
@@ -80,7 +80,7 @@ class UrnaSpider(BaseSpider):
 
     def parse_section_config(self, response, state):
         result = self.persist_response(response)
-        yield from self.query_sections(state, json.loads(result.contents))
+        yield from self.query_sections(state, orjson.loads(result.contents))
 
     def errback_section_config(self, failure):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
@@ -100,13 +100,13 @@ class UrnaSpider(BaseSpider):
                 aux_data = self.load_json(local_path)
 
                 yield from self.download_ballot_box_files(state, city, zone, section, aux_data)
-            except (FileNotFoundError, json.JSONDecodeError):
+            except (FileNotFoundError, orjson.JSONDecodeError):
                 yield self.make_request(path, self.parse_section, errback=self.errback_section,
                     priority=2, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
 
     def parse_section(self, response, state, city, zone, section):
         result = self.persist_response(response)
-        yield from self.download_ballot_box_files(state, city, zone, section, json.loads(result.contents))
+        yield from self.download_ballot_box_files(state, city, zone, section, orjson.loads(result.contents))
 
     def errback_section(self, failure):
         if failure.check(HttpError) and failure.value.response.status == 403:
@@ -143,7 +143,7 @@ class UrnaSpider(BaseSpider):
     def parse_ballot_box_file(self, response, hashdate, metadata):
         result = self.persist_response(response)
         if result.is_new_file:
-            self.index[result.filename] = result.index_entry._replace(index_date=hashdate, metadata=json.dumps(metadata))
+            self.index[result.filename] = result.index_entry._replace(index_date=hashdate, metadata=metadata)
 
         self.crawler.stats.inc_value("urna/processed_ballot_box_files")
 

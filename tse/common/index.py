@@ -1,4 +1,5 @@
 import datetime
+import orjson
 import logging
 import sqlite3
 from collections.abc import Iterable
@@ -10,7 +11,19 @@ class Index():
         last_modified: datetime.datetime
         etag: str
         index_date: datetime.datetime = None
-        metadata: bytes = None
+        metadata: object = None
+
+        @property
+        def meta_json(self):
+            return orjson.dumps(self.metadata) if self.metadata else None
+
+        @property
+        def sql_dict(self):
+            return {"lmod": self.last_modified, "etag": self.etag, "idx": self.index_date, "meta": self.meta_json}
+
+        @classmethod
+        def from_row(cls, row):
+            return cls(row[0], row[1], row[2], orjson.loads(row[3]) if row[3] else None)
 
     def __init__(self, persist_path=None):
         self.con = sqlite3.connect(persist_path if persist_path else ":memory:", 
@@ -72,7 +85,7 @@ class Index():
         if not row:
             raise KeyError(filename)
         
-        return Index.Entry(row[0], row[1], row[2], row[3])      
+        return Index.Entry.from_row(row)
 
     def __len__(self):
         row = self.con.execute("SELECT COUNT(*) FROM file_entries").fetchone()
@@ -84,8 +97,7 @@ class Index():
             version = row[0] if row else 1
 
             self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx, :meta)", 
-                    {"fn": filename, "ver": version, 
-                    "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date, "meta": entry.metadata})
+                    {"fn": filename, "ver": version} | entry.sql_dict)
 
             self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", 
                     {"fn": filename, "ver": version})
@@ -101,12 +113,12 @@ class Index():
     def items(self) -> Iterable[Tuple[str, Entry]]: 
         for row in self.con.execute(("SELECT file_entries.filename, last_modified, etag, index_date, metadata FROM file_entries"
                                      " NATURAL LEFT JOIN file_versions")):
-            yield (row[0], Index.Entry(row[1], row[2], row[3], row[4]))
+            yield (row[0], Index.Entry.from_row(row[1:]))
 
     def search(self, filename_pattern) -> Iterable[Tuple[str, Entry]]: 
         for row in self.con.execute(("SELECT file_entries.filename, last_modified, etag, index_date, metadata FROM file_entries"
                                      " NATURAL LEFT JOIN file_versions WHERE file_entries.filename LIKE :fnp"), {"fnp": filename_pattern}):
-            yield (row[0], Index.Entry(row[1], row[2], row[3], row[4]))
+            yield (row[0], Index.Entry.from_row(row[1:]))
 
     def add(self, filename: str, entry: Entry):
         self[filename] = entry
@@ -132,8 +144,7 @@ class Index():
 
             versions = dict(rows) if rows else dict()
 
-            replace_data = list({"fn": d["fn"], "ver": versions.get(d["fn"], 1), 
-                "lmod": d["e"].last_modified, "etag": d["e"].etag, "idx": d["e"].index_date, "meta": d["e"].meta} for d in data)
+            replace_data = list(({"fn": d["fn"], "ver": versions.get(d["fn"], 1)} | d["e"].sql_dict) for d in data)
 
             self.con.executemany("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx, :meta)", replace_data)
             self.con.executemany("REPLACE INTO file_entries VALUES (:fn, :ver)", replace_data)
@@ -150,8 +161,7 @@ class Index():
 
     def add_version(self, filename: str, version: int, entry: Entry):
         with self.con:
-            data = {"fn": filename, "ver": version, 
-                "lmod": entry.last_modified, "etag": entry.etag, "idx": entry.index_date, "meta": entry.meta}
+            data = {"fn": filename, "ver": version } | entry.sql_dict
 
             self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag: :idx, :meta)", data)
             self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", data)

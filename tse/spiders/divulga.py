@@ -1,9 +1,12 @@
-import json
+import datetime
+import orjson
 import logging
 import os
 
 from scrapy.downloadermiddlewares.retry import get_retry_request
+from scrapy.spidermiddlewares.httperror import HttpError
 
+from tse.common.index import Index
 from tse.common.basespider import BaseSpider
 from tse.common.pathinfo import PathInfo
 from tse.middlewares import defer_request
@@ -101,7 +104,7 @@ class DivulgaSpider(BaseSpider):
 
         transferring = self.crawler.engine.downloader.slots[response.meta["download_slot"]].transferring
 
-        data = json.loads(result.contents)
+        data = orjson.loads(result.contents)
         
         priorities = ((i, d, self.get_file_priority(i)) for i,d in self.expand_index(state, data))
         sorted_index = sorted(priorities, key = lambda t: t[2], reverse=True)
@@ -180,18 +183,19 @@ class DivulgaSpider(BaseSpider):
 
         if info.type == "f" and info.ext == "json":
             try:
-                yield from self.parse_fixed(json.loads(result.contents), info)
-            except json.JSONDecodeError:
-                logging.warning("Malformed json at %s, skipping parse", info.filename)
+                yield from self.process_fixed(orjson.loads(result.contents), info)
+            except orjson.JSONDecodeError:
+                logging.debug("Malformed json at %s, skipping parse", info.filename)
 
     def errback_file(self, failure):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
         self.pending.pop(failure.request.cb_kwargs["info"].filename, None)
 
-    def parse_fixed(self, data, source_info):
+    def process_fixed(self, data, source_info):
         sqcands = [cand["sqcand"] for cand in FixedParser.expand_candidates(data)]
+        
         metadata = {"sqcands": sqcands}
-        self.index[source_info.filename] = self.index[source_info.filename]._replace(metadata=json.dumps(metadata))
+        self.index[source_info.filename] = self.index[source_info.filename]._replace(metadata=metadata)
 
         if self.settings["DOWNLOAD_PICTURES"]:
             yield from self.generate_pictures_requests(source_info.election, sqcands)
@@ -221,7 +225,7 @@ class DivulgaSpider(BaseSpider):
         priority = self.get_file_priority(info)
 
         logging.debug("Scheduling picture %s, p: %d", filename, priority)
-        return self.make_request(path, self.parse_picture, priority=priority, 
+        return self.make_request(path, self.parse_picture, errback=self.errback_picture, priority=priority, 
             cb_kwargs={"filename": info.filename, "metadata": metadata})
 
     def parse_picture(self, response, filename, metadata):
@@ -229,17 +233,32 @@ class DivulgaSpider(BaseSpider):
             return    
         
         result = self.persist_response(response)
-        self.index[filename] = result.index_entry._replace(metadata=json.dumps(metadata))
+        self.index[filename] = result.index_entry._replace(metadata=metadata)
+
+    def errback_picture(self, failure):
+        if failure.check(HttpError) and failure.value.response.status == 403:
+            path = self.get_path_from_url(failure.request.url)
+            filename = os.path.basename(path)
+            self.index[filename] = Index.Entry(datetime.datetime.now().replace(microsecond=0), "")
+            logging.debug("Picture not found %s", str(failure.request))
+            return
+
+        logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
     def generate_missing_pictures_requests(self):
         sqcands_map = {}
 
-        for filename, index_entry in self.index.search("%%-f.json"):
-            if not index_entry.metadata:
-                continue
-
+        for filename, _ in self.index.search("%%-f.json"):
             info = PathInfo(filename)
-            sqcands_map.setdefault(info.election, set()).update(json.loads(index_entry.metadata)["sqcands"])
+
+            try:
+                with open(self.get_local_path(info.path), "rb") as f:
+                    data = orjson.loads(f.read())
+                    sqcands = [cand["sqcand"] for cand in FixedParser.expand_candidates(data)]
+                    sqcands_map.setdefault(info.election, set()).update(sqcands)
+            except orjson.JSONDecodeError:
+                logging.debug("Malformed json at %s, skipping parse", info.filename)
+                pass
 
         indexed_sqcands = {os.path.splitext(p)[0] for p,_ in self.index.search("%%.jpeg")}
 

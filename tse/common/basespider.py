@@ -1,5 +1,4 @@
 import datetime
-import json
 import logging
 import os
 import re
@@ -8,6 +7,7 @@ import signal
 
 import urllib.parse
 from email.utils import parsedate_to_datetime, format_datetime
+import orjson
 from pyparsing import NamedTuple
 
 import scrapy
@@ -50,7 +50,7 @@ class BaseSpider(scrapy.Spider):
 
     def parse_config(self, response):
         result = self.persist_response(response)
-        config_data = json.loads(result.contents)
+        config_data = orjson.loads(result.contents)
         yield from self.continue_requests(config_data)
 
     def get_local_path(self, path):
@@ -110,15 +110,15 @@ class BaseSpider(scrapy.Spider):
     class PersistedResult(NamedTuple):
         local_path: str
         index_entry: Index.Entry
-        body: str
+        body: bytes
         is_new_file: bool
 
         @property
-        def contents(self) -> str:
+        def contents(self) -> bytes:
             if self.body: 
                 return self.body
 
-            with open(self.local_path, "r") as f:
+            with open(self.local_path, "rb") as f:
                 return f.read()
 
         @property
@@ -133,8 +133,11 @@ class BaseSpider(scrapy.Spider):
         dt_epoch = date.timestamp()
         os.utime(path, (dt_epoch, dt_epoch))
 
+    def get_path_from_url(self, url):
+        return urllib.parse.urlparse(url).path.strip("/")
+
     def persist_response(self, response) -> PersistedResult:
-        local_path = os.path.join(self.settings["FILES_STORE"], urllib.parse.urlparse(response.url).path.strip("/"))
+        local_path = os.path.join(self.settings["FILES_STORE"], self.get_path_from_url(response.url))
         filename = os.path.basename(local_path)
 
         last_modified, etag, server_date = self.get_http_cache_headers(response)
@@ -237,8 +240,8 @@ class BaseSpider(scrapy.Spider):
 
         for config_path in config_paths:
             try:
-                with open(config_path, "r") as f:
-                    data = json.load(f)
+                with open(config_path, "rb") as f:
+                    data = orjson.loads(f.read())
                     map = {ccity: cstate for cstate, ccity, _, _, _, _ in CityConfigParser.expand_cities(data)}
                     self._city_state_map.update(map)
             except FileNotFoundError:
@@ -255,15 +258,13 @@ class BaseSpider(scrapy.Spider):
                     logging.debug("Index: Missing meta information %s", info.filename)
                     return False
 
-                meta = json.loads(entry.metadata)
-                info.path = info.make_ballot_box_file_path(meta["state"], meta["hash"])
+                info.path = info.make_ballot_box_file_path(entry.metadata["state"], entry.metadata["hash"])
             elif info.match == "picture":
                 if not entry.metadata:
                     logging.debug("Index: Missing meta information %s", info.filename)
                     return False
 
-                meta = json.loads(entry.metadata)
-                info.path = info.make_picture_path(meta["election"])
+                info.path = info.make_picture_path(entry.metadata["election"])
             else:
                 logging.debug("Index: Missing path %s", info.filename)
                 return False
@@ -298,6 +299,9 @@ class BaseSpider(scrapy.Spider):
         for f, e in log_progress(self.index.items(), len(self.index)):
             if self.shutdown:
                 return
+
+            if not e.etag:
+                continue
 
             if not self.validate_index_entry(f, e):
                 invalid.append(f)

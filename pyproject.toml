@@ -8,6 +8,7 @@ authors = ["Marcelo Oliveira <capyvara@gmail.com>"]
 python = "^3.8"
 Scrapy = "^2.6.3"
 tdqm = "^0.0.1"
+orjson = "^3.8.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
