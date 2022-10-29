@@ -49,15 +49,14 @@ AUTOTHROTTLE_START_DELAY = 0.01
 AUTOTHROTTLE_MAX_DELAY = 10
 AUTOTHROTTLE_TARGET_CONCURRENCY = 10.0
 
-# It seems to be using x-waf-rate-limit to ~20000request / 5min - > ~4000/min -> ~66/s -> ~0.015 min delay
-# https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html 
+# It seems to be using x-waf-rate-limit to ~20000 request / 5 min - > ~4000/min -> ~66/s -> ~0.015 min delay
 DOWNLOAD_DELAY = 0.016
 
 DOWNLOAD_TIMEOUT = 20
 RETRY_TIMES = 5
 
 # Debug stuff
-#VALIDATE_INDEX = True
+VALIDATE_INDEX = True
 
 # States to get information from, beware that without "br" some shared files such as config woudn't be downloaded
 STATES = ["br", "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go", "ma", "mg", "ms", "mt", "pa", 

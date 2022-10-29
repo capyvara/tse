@@ -263,7 +263,7 @@ class BaseSpider(scrapy.Spider):
                     return False
 
                 meta = json.loads(entry.metadata)
-                info.path = info.make_picture_file_path(meta["election"], meta["cand_state"])
+                info.path = info.make_picture_path(meta["election"])
             else:
                 logging.debug("Index: Missing path %s", info.filename)
                 return False

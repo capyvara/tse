@@ -36,6 +36,8 @@ class DivulgaSpider(BaseSpider):
             logging.info("Scheduling election: %s", election)
             yield from self.generate_requests_index(election)
 
+        yield from self.generate_pictures_requests()
+
     def request_reached_downloader(self, request, spider):
         filename = os.path.basename(urllib.parse.urlparse(request.url).path)
         self.downloading.add(filename)
@@ -85,8 +87,8 @@ class DivulgaSpider(BaseSpider):
         # Simplified results, totalling status
         elif info.type in ("r", "ab", "t", "e"):
             priority += 4
-        # Variable results
-        elif info.type == "v":
+        # Variable results, pictures
+        elif info.type == "v" or info.ext == "jpeg":
             priority += 2
 
         # Signatures
@@ -199,7 +201,7 @@ class DivulgaSpider(BaseSpider):
 
         if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
             try:
-                yield from self.query_pictures(json.loads(result.contents), info, index_date)
+                yield from self.query_pictures(json.loads(result.contents), info)
             except json.JSONDecodeError:
                 logging.warning("Malformed json at %s, skipping parse", info.filename)
 
@@ -207,37 +209,74 @@ class DivulgaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
         self.pending.pop(failure.request.cb_kwargs["info"].filename, None)
 
-    def query_pictures(self, data, info, index_date):
+    def query_pictures(self, data, source_info):
         added = 0
+
+        sqcands = []
 
         for cand in FixedParser.expand_candidates(data):
             sqcand = cand["sqcand"]
-            # President is br, others go on state specific directories
-            cand_state = info.state if info.cand != "1" else "br"
-            
-            path = PathInfo.get_picture_path(info.election, cand_state, sqcand)
-            filename = os.path.basename(path)
-            if filename in self.pending:
-                continue
+            sqcands.append(sqcand)
 
-            metadata = {"election": info.election, "cand_state": cand_state}
-
-            local_path = self.get_local_path(path)
-            if not os.path.exists(local_path):
-                self.pending[filename] = index_date
+            request = self.make_picture_request(source_info.election, sqcand)
+            if request:
                 added += 1
-                priority = self.get_file_priority(info) - 4
-                logging.debug("Scheduling picture %s, p: %d", filename, priority)
-                yield self.make_request(path, self.parse_picture, priority=priority, 
-                    cb_kwargs={"filename": filename, "index_date": index_date, "metadata": metadata})
+                yield request
+
+        metadata = {"sqcands": sqcands}
+        self.index[source_info.filename] = self.index[source_info.filename]._replace(metadata=json.dumps(metadata))
 
         if added > 0:
             logging.info("Added pictures %d, total pending %d", added, len(self.pending))
 
-    def parse_picture(self, response, filename, index_date, metadata):
-        index_date = self.pending.pop(filename, None)
-        if not index_date:
-            return
-
+    def parse_picture(self, response, filename, metadata):
+        if not self.pending.pop(filename, False):
+            return    
+        
         result = self.persist_response(response)
-        self.index[filename] = result.index_entry._replace(index_date=index_date, metadata=json.dumps(metadata))
+        self.index[filename] = result.index_entry._replace(metadata=json.dumps(metadata))
+
+    def make_picture_request(self, election, sqcand):
+        info = PathInfo(PathInfo.get_picture_filename(sqcand))
+
+        path = info.make_picture_path(election)
+        filename = os.path.basename(path)
+        if filename in self.pending:
+            return None
+
+        local_path = self.get_local_path(path)
+        if os.path.exists(local_path):
+            return None
+
+        metadata = {"election": election}
+
+        self.pending[filename] = True
+        priority = self.get_file_priority(info)
+
+        logging.debug("Scheduling picture %s, p: %d", filename, priority)
+        return self.make_request(path, self.parse_picture, priority=priority, 
+            cb_kwargs={"filename": info.filename, "metadata": metadata})
+
+    def generate_pictures_requests(self):
+        sqcands_map = {}
+        added = 0
+
+        for filename, index_entry in self.index.search("%%-f.json"):
+            if not index_entry.metadata:
+                continue
+
+            info = PathInfo(filename)
+            sqcands_map.setdefault(info.election, set()).update(json.loads(index_entry.metadata)["sqcands"])
+
+        indexed_sqcands = {os.path.splitext(p)[0] for p,_ in self.index.search("%%.jpeg")}
+
+        for election, sqcands in sqcands_map.items():
+            diff = sqcands - indexed_sqcands
+            for sqcand in diff:
+                request = self.make_picture_request(election, sqcand)
+                if request:
+                    added += 1
+                    yield request
+
+        if added > 0:
+            logging.info("Added pictures %d, total pending %d", added, len(self.pending))

@@ -41,6 +41,7 @@ class PathInfo:
         root, ext = os.path.splitext(filename)
         if ext == ".jpeg":
             self.sqcand = root
+            self.state = self._get_state_from_sqcand(self.sqcand)
             self.ext = "jpeg"
             self.match = "picture"
             return 
@@ -117,11 +118,18 @@ class PathInfo:
 
     __repr__ = __str__
 
+    # 1 to 28
+    _cand_state_codes_order = ["ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg", 
+        "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to", "br"]
+
+    def _get_state_from_sqcand(self, sqcand):
+        return self._cand_state_codes_order[int(sqcand.rjust(12, "0")[0:2]) - 1]
+    
     def make_ballot_box_file_path(self, state, hash):
         return PathInfo.get_ballot_box_file_path(self.plea, state, self.city, self.zone, self.section, hash, self.filename)
 
-    def make_picture_file_path(self, election, cand_state):
-        return PathInfo.get_picture_path(election, cand_state, self.sqcand)
+    def make_picture_path(self, election):
+        return PathInfo.get_picture_path(election, self.state, self.sqcand)
 
     @staticmethod
     def get_local_path(settings, path):
@@ -148,10 +156,14 @@ class PathInfo:
     @staticmethod
     def get_cities_config_path(election):
         return f"{election}/config/mun-e{election:0>6}-cm.json"
-    
+
     @staticmethod
-    def get_picture_path(election, cand_state, sqcand):
-        return f"{election}/fotos/{cand_state}/{sqcand}.jpeg"
+    def get_picture_filename(sqcand):
+        return f"{sqcand}.jpeg"
+
+    @classmethod
+    def get_picture_path(cls, election, cand_state, sqcand):
+        return f"{election}/fotos/{cand_state}/{cls.get_picture_filename(sqcand)}"
 
     @staticmethod
     def get_sections_config_path(plea, state):

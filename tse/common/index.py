@@ -103,6 +103,11 @@ class Index():
                                      " NATURAL LEFT JOIN file_versions")):
             yield (row[0], Index.Entry(row[1], row[2], row[3], row[4]))
 
+    def search(self, filename_pattern) -> Iterable[Tuple[str, Entry]]: 
+        for row in self.con.execute(("SELECT file_entries.filename, last_modified, etag, index_date, metadata FROM file_entries"
+                                     " NATURAL LEFT JOIN file_versions WHERE file_entries.filename LIKE :fnp"), {"fnp": filename_pattern}):
+            yield (row[0], Index.Entry(row[1], row[2], row[3], row[4]))
+
     def add(self, filename: str, entry: Entry):
         self[filename] = entry
 
