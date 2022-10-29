@@ -1,9 +1,7 @@
 import json
 import logging
 import os
-import urllib.parse
 
-from scrapy import signals
 from scrapy.downloadermiddlewares.retry import get_retry_request
 
 from tse.common.basespider import BaseSpider
@@ -26,25 +24,15 @@ class DivulgaSpider(BaseSpider):
         self.continuous = continuous
 
     def continue_requests(self, config_data):
-        self.crawler.signals.connect(self.request_reached_downloader, signals.request_reached_downloader)
-        self.crawler.signals.connect(self.request_left_downloader, signals.request_left_downloader)
-
         self.pending = dict()
-        self.downloading = set()
 
         for election in self.elections:
             logging.info("Scheduling election: %s", election)
             yield from self.generate_requests_index(election)
 
-        yield from self.generate_pictures_requests()
+        if self.settings["DOWNLOAD_PICTURES"]:
+            yield from self.generate_missing_pictures_requests()
 
-    def request_reached_downloader(self, request, spider):
-        filename = os.path.basename(urllib.parse.urlparse(request.url).path)
-        self.downloading.add(filename)
-
-    def request_left_downloader(self, request, spider):
-        filename = os.path.basename(urllib.parse.urlparse(request.url).path)
-        self.downloading.discard(filename)
 
     def generate_requests_index(self, election):
         idx = self.elections.index(election)
@@ -59,40 +47,31 @@ class DivulgaSpider(BaseSpider):
 
     # Higher is scheduled first
     def get_file_priority(self, info):
-        # Reindexes
-        if info.type == "i":
+        if info.type == "i": # Reindexes
             return 3
         
         priority = 0
 
         if info.election:
-            # Favor federal
-            try:
-                idx = self.elections.index(info.election)
-                priority += (len(self.elections) - idx) * 30
-            except ValueError:
-                pass
+            idx = self.elections.index(info.election)
+            priority += (len(self.elections) - 1 - idx) * 30 # Favors federal elections
         
         if info.state:
-            # Countrywise
-            if info.state == "br":
-                priority += 20
-            # Statewise        
-            elif not info.city:
+            if info.state == "br": # Countrywise
+                priority += 20       
+            elif not info.city: # No city = Statewise 
                 priority += 10
     
-        # Configuration, fixed, etc (mostly unchanging files)
-        if info.type in ("c", "a", "cm", "f"):
+        if info.type in ("c", "a", "cm", "f"): # Configuration, fixed, etc (mostly unchanging files)
             priority += 6
-        # Simplified results, totalling status
-        elif info.type in ("r", "ab", "t", "e"):
+        elif info.type in ("r", "ab", "t", "e"): # Simplified results, totalling status
             priority += 4
-        # Variable results, pictures
-        elif info.type == "v" or info.ext == "jpeg":
+        elif info.type == "v": # Variable results
             priority += 2
-
-        # Signatures
-        if info.ext == "sig":
+        
+        if info.ext == "jpeg": # Pics
+            priority += 1
+        elif info.ext == "sig": # Signatures
             priority -= 2
 
         return priority
@@ -199,9 +178,9 @@ class DivulgaSpider(BaseSpider):
         if not self.crawler.crawling:
             return
 
-        if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
+        if info.type == "f" and info.ext == "json":
             try:
-                yield from self.query_pictures(json.loads(result.contents), info)
+                yield from self.parse_fixed(json.loads(result.contents), info)
             except json.JSONDecodeError:
                 logging.warning("Malformed json at %s, skipping parse", info.filename)
 
@@ -209,43 +188,31 @@ class DivulgaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
         self.pending.pop(failure.request.cb_kwargs["info"].filename, None)
 
-    def query_pictures(self, data, source_info):
+    def parse_fixed(self, data, source_info):
+        sqcands = [cand["sqcand"] for cand in FixedParser.expand_candidates(data)]
+        metadata = {"sqcands": sqcands}
+        self.index[source_info.filename] = self.index[source_info.filename]._replace(metadata=json.dumps(metadata))
+
+        if self.settings["DOWNLOAD_PICTURES"]:
+            yield from self.generate_pictures_requests(source_info.election, sqcands)
+
+    def generate_pictures_requests(self, election, sqcands):
         added = 0
-
-        sqcands = []
-
-        for cand in FixedParser.expand_candidates(data):
-            sqcand = cand["sqcand"]
-            sqcands.append(sqcand)
-
-            request = self.make_picture_request(source_info.election, sqcand)
+        for sqcand in sqcands:
+            request = self.make_picture_request(election, sqcand)
             if request:
                 added += 1
                 yield request
 
-        metadata = {"sqcands": sqcands}
-        self.index[source_info.filename] = self.index[source_info.filename]._replace(metadata=json.dumps(metadata))
-
         if added > 0:
             logging.info("Added pictures %d, total pending %d", added, len(self.pending))
-
-    def parse_picture(self, response, filename, metadata):
-        if not self.pending.pop(filename, False):
-            return    
-        
-        result = self.persist_response(response)
-        self.index[filename] = result.index_entry._replace(metadata=json.dumps(metadata))
 
     def make_picture_request(self, election, sqcand):
         info = PathInfo(PathInfo.get_picture_filename(sqcand))
 
         path = info.make_picture_path(election)
         filename = os.path.basename(path)
-        if filename in self.pending:
-            return None
-
-        local_path = self.get_local_path(path)
-        if os.path.exists(local_path):
+        if filename in self.pending or filename in self.index:
             return None
 
         metadata = {"election": election}
@@ -257,9 +224,15 @@ class DivulgaSpider(BaseSpider):
         return self.make_request(path, self.parse_picture, priority=priority, 
             cb_kwargs={"filename": info.filename, "metadata": metadata})
 
-    def generate_pictures_requests(self):
+    def parse_picture(self, response, filename, metadata):
+        if not self.pending.pop(filename, False):
+            return    
+        
+        result = self.persist_response(response)
+        self.index[filename] = result.index_entry._replace(metadata=json.dumps(metadata))
+
+    def generate_missing_pictures_requests(self):
         sqcands_map = {}
-        added = 0
 
         for filename, index_entry in self.index.search("%%-f.json"):
             if not index_entry.metadata:
@@ -272,11 +245,4 @@ class DivulgaSpider(BaseSpider):
 
         for election, sqcands in sqcands_map.items():
             diff = sqcands - indexed_sqcands
-            for sqcand in diff:
-                request = self.make_picture_request(election, sqcand)
-                if request:
-                    added += 1
-                    yield request
-
-        if added > 0:
-            logging.info("Added pictures %d, total pending %d", added, len(self.pending))
+            yield from self.generate_pictures_requests(election, diff)
