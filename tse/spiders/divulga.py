@@ -181,9 +181,9 @@ class DivulgaSpider(BaseSpider):
         if not self.crawler.crawling:
             return
 
-        if info.type == "f" and info.ext == "json":
+        if info.type == "f" and info.ext == "json" and self.settings["DOWNLOAD_PICTURES"]:
             try:
-                yield from self.process_fixed(orjson.loads(result.contents), info)
+                yield from self.process_fixed(orjson.loads(result.contents), info.election)
             except orjson.JSONDecodeError:
                 logging.debug("Malformed json at %s, skipping parse", info.filename)
 
@@ -191,14 +191,9 @@ class DivulgaSpider(BaseSpider):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
         self.pending.pop(failure.request.cb_kwargs["info"].filename, None)
 
-    def process_fixed(self, data, source_info):
-        sqcands = [cand["sqcand"] for cand in FixedParser.expand_candidates(data)]
-        
-        metadata = {"sqcands": sqcands}
-        self.index[source_info.filename] = self.index[source_info.filename]._replace(metadata=metadata)
-
-        if self.settings["DOWNLOAD_PICTURES"]:
-            yield from self.generate_pictures_requests(source_info.election, sqcands)
+    def process_fixed(self, data, election):
+        sqcands = (cand["sqcand"] for cand in FixedParser.expand_candidates(data))
+        yield from self.generate_pictures_requests(election, sqcands)
 
     def generate_pictures_requests(self, election, sqcands):
         added = 0
@@ -247,6 +242,7 @@ class DivulgaSpider(BaseSpider):
 
     def generate_missing_pictures_requests(self):
         sqcands_map = {}
+        indexed_sqcands = {os.path.splitext(p)[0] for p,_ in self.index.search("%%.jpeg")}
 
         for filename, _ in self.index.search("%%-f.json"):
             info = PathInfo(filename)
@@ -254,13 +250,10 @@ class DivulgaSpider(BaseSpider):
             try:
                 with open(self.get_local_path(info.path), "rb") as f:
                     data = orjson.loads(f.read())
-                    sqcands = [cand["sqcand"] for cand in FixedParser.expand_candidates(data)]
+                    sqcands = (cand["sqcand"] for cand in FixedParser.expand_candidates(data))
                     sqcands_map.setdefault(info.election, set()).update(sqcands)
             except orjson.JSONDecodeError:
                 logging.debug("Malformed json at %s, skipping parse", info.filename)
-                pass
-
-        indexed_sqcands = {os.path.splitext(p)[0] for p,_ in self.index.search("%%.jpeg")}
 
         for election, sqcands in sqcands_map.items():
             diff = sqcands - indexed_sqcands
