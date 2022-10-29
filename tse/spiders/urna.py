@@ -29,7 +29,7 @@ class UrnaSpider(BaseSpider):
 
     def load_json(self, path):
         with open(path, "rb") as f:
-            return orjson.load(f.read())
+            return orjson.loads(f.read())
 
     def query_sigfile(self, source_path, force=False):
         sig_path = os.path.splitext(source_path)[0] + ".sig"
