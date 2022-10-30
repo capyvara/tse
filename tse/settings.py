@@ -56,7 +56,7 @@ DOWNLOAD_TIMEOUT = 20
 RETRY_TIMES = 5
 
 # Debug stuff
-VALIDATE_INDEX = True
+VALIDATE_INDEX = False
 
 # States to get information from, beware that without "br" some shared files such as config woudn't be downloaded
 STATES = ["br", "ac", "al", "am", "ap", "ba", "ce", "df", "es", "go", "ma", "mg", "ms", "mt", "pa", 
