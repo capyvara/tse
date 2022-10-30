@@ -142,7 +142,7 @@ class BaseSpider(scrapy.Spider):
         filename = os.path.basename(local_path)
 
         last_modified, etag, server_date = self.get_http_cache_headers(response)
-        index_entry = self.get_valid_index_entry(filename)
+        index_entry = self.index.get(filename)
 
         if response.status == 304:
             if index_entry:
