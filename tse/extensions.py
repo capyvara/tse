@@ -30,10 +30,11 @@ class LogStatsDivulga:
     def log(self, spider):
         pending = len(spider.pending) if hasattr(spider, "pending") else 0
         dupes = self.stats.get_value("divulga/dupes", 0)
+        skipped_dupes = self.stats.get_value("divulga/skipped_dupes", 0)
         bumped = self.stats.get_value("divulga/bumped", 0)
         reindexes = self.stats.get_value("divulga/reindexes", 0)
-        logger.info("Divulga - pending: %(pending)d, dupes: %(dupes)d, bumped: %(bumped)d, reindexes: %(reindexes)d", 
-            {"pending": pending, "dupes": dupes, "bumped": bumped, "reindexes": reindexes}, 
+        logger.info("Divulga - pending: %(pending)d, dupes: %(dupes)d, skipped_dupes: %(skipped_dupes)d, bumped: %(bumped)d, reindexes: %(reindexes)d", 
+            {"pending": pending, "dupes": dupes, "skipped_dupes": skipped_dupes, "bumped": bumped, "reindexes": reindexes}, 
             extra={"spider": spider})
         return
 

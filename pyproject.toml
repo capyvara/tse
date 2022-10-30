@@ -6,12 +6,17 @@ authors = ["Marcelo Oliveira <capyvara@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
-Scrapy = "^2.6.3"
-tdqm = "^0.0.1"
 orjson = "^3.8.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
+
+[tool.poetry.group.extract]
+optional = true
+
+[tool.poetry.group.extract.dependencies]
+Scrapy = "^2.6.3"
+ckanapi = "^4.7"
 
 [tool.poetry.group.analysis]
 optional = true
@@ -21,7 +26,7 @@ pandas = "^1.5.0"
 jupyter = "^1.0.0"
 py7zr = "^0.20.0"
 ipywidgets = "^7.0"
-ckanapi = "^4.7"
+tdqm = "^0.0.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

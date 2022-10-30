@@ -81,6 +81,14 @@ KEEP_OLD_VERSIONS = True
 # IGNORE_PATTERN = r".*(?<!\.logjez)$"
 
 
+# Dev env
+# HOST = "http://localhost:8080"
+# ENVIRONMENT = "teste_dev"
+# CYCLE = "ele2022"
+# ELECTIONS = ["9722", "9724"]
+# PLEA = "8480"
+
+
 # Sim env
 # HOST = "https://resultados-sim.tse.jus.br"
 # ENVIRONMENT = "teste"
@@ -95,10 +103,10 @@ ENVIRONMENT = "oficial"
 CYCLE = "ele2022"
 
 # 1st round
-PLEA = "406"
-ELECTIONS = ["544", "546"]
+# PLEA = "406"
+# ELECTIONS = ["544", "546"]
 
 # 2nd round
-# PLEA = "407"
-# ELECTIONS = ["545", "547"]
+PLEA = "407"
+ELECTIONS = ["545", "547"]
 

@@ -157,3 +157,4 @@ data/crawls
 
 nohup.out
 *.o
+twistd.pid

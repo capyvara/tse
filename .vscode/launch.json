@@ -27,12 +27,12 @@
                 "AUTOTHROTTLE_DEBUG=False",
                 "--loglevel=DEBUG",
                 "-a",
-                "_continuous=True"
+                "continuous=True"
             ],
             "console": "integratedTerminal",
             "env": {
-                "HTTPS_PROXY": "localhost:8888",
-                "CURL_CA_BUNDLE": "~/Keys/charles-ssl-proxying-certificate.pem"
+                "_HTTPS_PROXY": "localhost:8888",
+                "_CURL_CA_BUNDLE": "~/Keys/charles-ssl-proxying-certificate.pem"
             },
             "justMyCode": false
         }

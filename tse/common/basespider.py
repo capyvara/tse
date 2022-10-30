@@ -90,8 +90,9 @@ class BaseSpider(scrapy.Spider):
     def make_request(self, path: str, *args, **kwargs):
         headers = kwargs.setdefault("headers", {})
 
-        entry = self.index.get(os.path.basename(path))
-        if entry and os.path.exists(self.get_local_path(path)):
+        filename = os.path.basename(path)
+        entry = self.get_valid_index_entry(filename)
+        if entry:
             if entry.last_modified != None:
                 headers[b"If-Modified-Since"] = format_datetime(entry.last_modified.replace(tzinfo=datetime.timezone.utc), True)
             if entry.etag != None:
@@ -130,7 +131,7 @@ class BaseSpider(scrapy.Spider):
         with open(path, "wb") as f:
             f.write(body)
 
-        dt_epoch = date.timestamp()
+        dt_epoch = date.replace(tzinfo=datetime.timezone.utc).timestamp()
         os.utime(path, (dt_epoch, dt_epoch))
 
     def get_path_from_url(self, url):
@@ -141,18 +142,17 @@ class BaseSpider(scrapy.Spider):
         filename = os.path.basename(local_path)
 
         last_modified, etag, server_date = self.get_http_cache_headers(response)
-        index_entry = self.index.get(filename)
+        index_entry = self.get_valid_index_entry(filename)
 
         if response.status == 304:
-            if index_entry and (index_entry.etag == etag) and os.path.exists(local_path):
+            if index_entry:
                 return self.PersistedResult(local_path, index_entry, None, False)
             else:
-                # TODO invalidate/retry
                 raise ResponseFailed(response)
 
         last_modified = (last_modified or 
                         server_date or 
-                        datetime.datetime.utcnow().replace(tzinfo=None))
+                        datetime.datetime.utcnow().replace(tzinfo=None, microsecond=0))
 
         etag = etag or hashlib.md5(response.body).hexdigest()
 
@@ -249,6 +249,17 @@ class BaseSpider(scrapy.Spider):
         
         return self._city_state_map[city]
 
+    def get_valid_index_entry(self, filename):
+        entry = self.index.get(filename)
+        if not entry:
+            return None
+
+        if not self.validate_index_entry(filename, entry):
+            self.index.discard(filename)
+            return None
+
+        return entry
+
     def validate_index_entry(self, filename, entry: Index.Entry):
         info = PathInfo(filename)
         
@@ -274,7 +285,7 @@ class BaseSpider(scrapy.Spider):
             logging.debug("Index: Local path not found %s", info.filename)
             return False
 
-        modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_path)).replace(microsecond=0)
+        modified_time = datetime.datetime.utcfromtimestamp(os.path.getmtime(local_path)).replace(microsecond=0)
         
         # Some tolerance, as some processes may change precision (ex: unzipping has two seconds precision)
         delta = modified_time - entry.last_modified

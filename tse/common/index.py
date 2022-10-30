@@ -163,7 +163,7 @@ class Index():
         with self.con:
             data = {"fn": filename, "ver": version } | entry.sql_dict
 
-            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag: :idx, :meta)", data)
+            self.con.execute("REPLACE INTO file_versions VALUES (:fn, :ver, :lmod, :etag, :idx, :meta)", data)
             self.con.execute("REPLACE INTO file_entries VALUES (:fn, :ver)", data)
 
     def optimize(self):

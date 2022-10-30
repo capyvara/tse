@@ -128,7 +128,7 @@ class DivulgaSpider(BaseSpider):
                     in_transfer = next(filter(find_req, transferring), None)
                     if in_transfer == None:
                         self.pending[info.filename] = new_index_date
-                        logging.debug("Bumped date for %s to %s > %s", info.filename, self.pending[info.filename], new_index_date)
+                        logging.debug("Bumped date for %s to [%s > %s]", info.filename, self.pending[info.filename], new_index_date)
                         self.crawler.stats.inc_value("divulga/bumped")
                 
                 continue
@@ -163,16 +163,22 @@ class DivulgaSpider(BaseSpider):
 
         result = self.persist_response(response)
 
-        # Server may send a version that wasn't updated yet so keep the old index date
-        if not result.is_new_file:
-            self.crawler.stats.inc_value("divulga/dupes")
-            
-            retry_request = get_retry_request(response.request, 
-                spider=self, reason='outdated_index', max_retry_times=1, priority_adjust=-1)
-            
-            if retry_request:
+        # Server may send a version that wasn't updated yet
+        if not result.is_new_file and self.crawler.crawling:
+            # Re-attempt couple times after a delay
+            retry_times = response.meta.get("retry_times", 0) + 1
+            if retry_times <= 3:
+                self.crawler.stats.inc_value("divulga/dupes")
+                logging.debug("File %s dupe retrying [%s > %s], rt:%d", info.filename, result.index_entry.index_date, index_date, retry_times)
+
+                retry_request = defer_request(min(5.0 * retry_times, 15.0), response.request)
+                retry_request.meta["retry_times"] = retry_times
                 self.pending[info.filename] = index_date
                 yield retry_request
+            else:
+                self.crawler.stats.inc_value("divulga/skipped_dupes")
+                logging.debug("File %s dupe skipped up [%s > %s]", info.filename, result.index_entry.index_date, index_date)
+                self.index[info.filename] = result.index_entry._replace(index_date=index_date)
 
             return
 
@@ -203,7 +209,7 @@ class DivulgaSpider(BaseSpider):
                 added += 1
                 yield request
 
-        if added > 0:
+        if added > 10:
             logging.info("Added pictures %d, total pending %d", added, len(self.pending))
 
     def make_picture_request(self, election, sqcand):
