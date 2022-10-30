@@ -21,6 +21,7 @@ COOKIES_ENABLED = False
 REFERER_ENABLED = False
 RANDOMIZE_DOWNLOAD_DELAY = False
 URLLENGTH_LIMIT = None
+REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 SPIDER_MIDDLEWARES = {
     'scrapy.spidermiddlewares.depth.DepthMiddleware': None,
     'scrapy.spidermiddlewares.urllength.UrlLengthMiddleware': None,
