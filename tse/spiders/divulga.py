@@ -49,10 +49,7 @@ class DivulgaSpider(BaseSpider):
                 cb_kwargs={"election": election, "state":state})
 
     # Higher is scheduled first
-    def get_file_priority(self, info):
-        if info.type == "i": # Reindexes
-            return 3
-        
+    def get_file_priority(self, info):        
         priority = 0
 
         if info.election:
@@ -69,6 +66,8 @@ class DivulgaSpider(BaseSpider):
             priority += 6
         elif info.type in ("r", "ab", "t", "e"): # Simplified results, totalling status
             priority += 4
+        elif info.type == "i": # Reindexes
+            priority += 3
         elif info.type == "v": # Variable results
             priority += 2
         
