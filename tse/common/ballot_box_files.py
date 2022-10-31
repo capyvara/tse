@@ -1,5 +1,9 @@
+import csv
+import io
 import os
 from enum import Enum
+import re
+from typing import IO, Any
 
 import pandas as pd
 import py7zr
@@ -58,7 +62,7 @@ def read_ballot_box_logs(file, source_filename = None):
             if filename != "logd.dat":
                 continue
 
-            df = pd.read_csv(bio, sep="\t", header=None, encoding="latin_1", 
+            df = pd.read_table(bio, header=None, encoding="latin_1", 
                 names=["timestamp", "level", "id_ballot_box", "app", "message", "hash"],
                 parse_dates=["timestamp"], infer_datetime_format = True, dayfirst=True,
                 dtype={
@@ -73,3 +77,50 @@ def read_ballot_box_logs(file, source_filename = None):
 
     if len(extra_logs) > 0:
         yield from extra_logs
+
+class Grok:
+    PATTERNS = {
+        "PATH": r"(/([\w_%!$@:.,~-]+|\\.)*)+",
+    }
+
+    def compile_grok(pat):
+        return re.compile(re.sub(r'%{(\w+):(\w+)}', 
+            lambda m: "(?P<" + m.group(2) + ">" + PATTERNS[m.group(1)] + ")", pat))
+
+# TODO: Put more common first
+RULES = [
+    r"Urna ligada em (?P<date>.+) às (?P<time>.+)",
+    r"Iniciando aplicação - (?P<env>.+) - (?P<round>.+)",
+    r"Versão da aplicação: (?P<ver_num>.+) - (?P<ver_name>.+)",
+    r"Tamanho da (?P<target>.+): (?P<target_size>.+) MB",
+    r"Verificação de assinatura de aplicação por etapa \[(?P<stage>\d+)\] - \[(?P<path>\d+)\] - \[(?P<result>\d+)\]"
+]
+
+PATTERNS = [re.compile(p) for p in RULES]
+
+def process_message(message: str):
+    for pattern in PATTERNS:
+        match = pattern.match(message)
+        if match:
+            params = match.groupdict()
+            split = []
+            lbound = 0
+            for key, l, r in ((key, *match.span(key)) for key in params.keys()):
+                split.append(message[lbound:l])
+                lbound = r
+                split.append(f"%({key})s")
+            return ("".join(split), params)
+    return (message, None)
+
+def log_parser(buffer: IO[Any]):
+    wrapper = io.TextIOWrapper(buffer, encoding="latin_1", newline="")
+    reader = csv.reader(wrapper, delimiter="\t")
+    for row in reader:
+        # print('\t'.join(row))
+        print(process_message(row[4]))
+    return
+
+test_log_path = "data/download/oficial/ele2022/arquivo-urna/406/dados/ac/01066/0004/0077/395459446c754b34572b56304a706a6a413454646f6f5a6f5664426f5169564241506566444932644f75493d/o00406-0106600040077.logjez"
+with py7zr.SevenZipFile(test_log_path, 'r') as zip:
+    log_parser(zip.read("logd.dat")["logd.dat"])
+    pass
