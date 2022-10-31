@@ -22,7 +22,7 @@ class UrnaSpider(BaseSpider):
     # 4 - Section configs
     # 3 - Section configs.sig
     # 2 - Aux files
-    # 1 - Ballot files
+    # 1 - Voting machine files
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -99,14 +99,14 @@ class UrnaSpider(BaseSpider):
                 local_path = self.get_local_path(path)
                 aux_data = self.load_json(local_path)
 
-                yield from self.download_ballot_box_files(state, city, zone, section, aux_data)
+                yield from self.download_voting_machine_files(state, city, zone, section, aux_data)
             except (FileNotFoundError, orjson.JSONDecodeError):
                 yield self.make_request(path, self.parse_section, errback=self.errback_section,
                     priority=2, cb_kwargs={"state": state, "city": city, "zone": zone, "section": section})
 
     def parse_section(self, response, state, city, zone, section):
         result = self.persist_response(response)
-        yield from self.download_ballot_box_files(state, city, zone, section, orjson.loads(result.contents))
+        yield from self.download_voting_machine_files(state, city, zone, section, orjson.loads(result.contents))
 
     def errback_section(self, failure):
         if failure.check(HttpError) and failure.value.response.status == 403:
@@ -116,7 +116,7 @@ class UrnaSpider(BaseSpider):
 
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))
 
-    def download_ballot_box_files(self, state, city, zone, section, data):
+    def download_voting_machine_files(self, state, city, zone, section, data):
         self.crawler.stats.inc_value("urna/processed_sections")
 
         hash, hashdate, filenames = SectionAuxParser.get_files(data)
@@ -127,25 +127,25 @@ class UrnaSpider(BaseSpider):
             if self.ignore_pattern and self.ignore_pattern.match(filename):
                 continue
 
-            self.crawler.stats.inc_value("urna/ballot_box_files")
+            self.crawler.stats.inc_value("urna/voting_machine_files")
 
-            path = PathInfo.get_ballot_box_file_path(self.plea, state, city, zone, section, hash, filename)
+            path = PathInfo.get_voting_machine_file_path(self.plea, state, city, zone, section, hash, filename)
             local_path = self.get_local_path(path)
 
             metadata = {"state": state, "hash": hash}
 
             if not os.path.exists(local_path):
-                yield self.make_request(path, self.parse_ballot_box_file, errback=self.errback_ballot_box_file,
+                yield self.make_request(path, self.parse_voting_machine_file, errback=self.errback_voting_machine_file,
                     priority=1, cb_kwargs={"hashdate": hashdate, "metadata": metadata})
             else:
-                self.crawler.stats.inc_value("urna/processed_ballot_box_files")
+                self.crawler.stats.inc_value("urna/processed_voting_machine_files")
 
-    def parse_ballot_box_file(self, response, hashdate, metadata):
+    def parse_voting_machine_file(self, response, hashdate, metadata):
         result = self.persist_response(response)
         if result.is_new_file:
             self.index[result.filename] = result.index_entry._replace(index_date=hashdate, metadata=metadata)
 
-        self.crawler.stats.inc_value("urna/processed_ballot_box_files")
+        self.crawler.stats.inc_value("urna/processed_voting_machine_files")
 
-    def errback_ballot_box_file(self, failure):
+    def errback_voting_machine_file(self, failure):
         logging.error("Failure downloading %s - %s", str(failure.request), str(failure.value))

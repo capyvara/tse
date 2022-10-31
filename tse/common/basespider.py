@@ -264,12 +264,12 @@ class BaseSpider(scrapy.Spider):
         info = PathInfo(filename)
         
         if not info.path:
-            if info.match == "ballot_box":
+            if info.match == "voting_machine":
                 if not entry.metadata:
                     logging.debug("Index: Missing meta information %s", info.filename)
                     return False
 
-                info.path = info.make_ballot_box_file_path(entry.metadata["state"], entry.metadata["hash"])
+                info.path = info.make_voting_machine_file_path(entry.metadata["state"], entry.metadata["hash"])
             elif info.match == "picture":
                 if not entry.metadata:
                     logging.debug("Index: Missing meta information %s", info.filename)

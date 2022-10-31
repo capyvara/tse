@@ -8,7 +8,7 @@ class PathInfo:
         re.compile(r"^(?P<prefix>cert|mun)?(?P<state>\w{2})?(?P<city>\d{5})?(?:-?p(?P<plea>\d{6}))?(?:-c(?P<cand>\d{4}))?(?:-e(?P<election>\d{6}))?(?:-(?P<ver>\d{3}))?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)"),
         re.compile(r"^p(?P<plea>\d{6})-(?P<state>\w{2})-m(?P<city>\d{5})?-z(?P<zone>\d{4})?-s(?P<section>\d{4})?-(?P<type>\w{1,3}?)\.(?P<ext>\w+)"),
         re.compile(r"^(o|s|t)(?P<plea>\d{5})-(?P<city>\d{5})(?P<zone>\d{4})(?P<section>\d{4})\.(?P<ext>\w+)"),
-        re.compile(r"^(?P<id_ballot_box>\d{8})(?P<timestamp>\d{14})-(?P<seq>\d{2})\.(?P<ext>\w+)")
+        re.compile(r"^(?P<id_voting_machine>\d{8})(?P<timestamp>\d{14})-(?P<seq>\d{2})\.(?P<ext>\w+)")
     ]
 
     def __init__(self, filename):
@@ -25,7 +25,7 @@ class PathInfo:
         self.ver = None
         self.type = None
         self.ext = None
-        self.id_ballot_box = None
+        self.id_voting_machine = None
         self.timestamp = None
         self.seq = None
         self.match = None
@@ -90,7 +90,7 @@ class PathInfo:
 
             return
 
-        # Ballot box files
+        # Voting machine files
         result = self._regexes[2].match(filename)
         if result:
             self.plea = result["plea"].lstrip("0") if result["plea"] else None
@@ -98,17 +98,17 @@ class PathInfo:
             self.zone = result["zone"].lstrip("0") if result["zone"] else None
             self.section = result["section"].lstrip("0") if result["section"] else None
             self.ext = result.group("ext")
-            self.match = "ballot_box"
+            self.match = "voting_machine"
             return
 
-        # Ballot box log contingency
+        # Voting machine log contingency
         result = self._regexes[3].match(filename)
         if result:
-            self.id_ballot_box = result["id_ballot_box"].lstrip("0") if result["id_ballot_box"] else None
+            self.id_voting_machine = result["id_voting_machine"].lstrip("0") if result["id_voting_machine"] else None
             self.timestamp = datetime.strptime(self.timestamp, r"%d%m%Y%H%M%S") if result["timestamp"] else None
             self.seq = result.group("seq")
             self.ext = result.group("ext")
-            self.match = "ballot_box_contingency"
+            self.match = "voting_machine_contingency"
             return
 
         raise ValueError("Filename format not recognized")
@@ -125,8 +125,8 @@ class PathInfo:
     def _get_state_from_sqcand(self, sqcand):
         return self._cand_state_codes_order[int(sqcand.rjust(12, "0")[0:2]) - 1]
     
-    def make_ballot_box_file_path(self, state, hash):
-        return PathInfo.get_ballot_box_file_path(self.plea, state, self.city, self.zone, self.section, hash, self.filename)
+    def make_voting_machine_file_path(self, state, hash):
+        return PathInfo.get_voting_machine_file_path(self.plea, state, self.city, self.zone, self.section, hash, self.filename)
 
     def make_picture_path(self, election):
         return PathInfo.get_picture_path(election, self.state, self.sqcand)
@@ -178,9 +178,9 @@ class PathInfo:
         return f"{cls._get_section_base_path(plea, state, city, zone, section)}/p{plea:0>6}-{state}-m{city:0>5}-z{zone:0>4}-s{section:0>4}-aux.json"
 
     @classmethod
-    def get_ballot_box_file_path(cls, plea, state, city, zone, section, hash, filename):
+    def get_voting_machine_file_path(cls, plea, state, city, zone, section, hash, filename):
         return f"{cls._get_section_base_path(plea, state, city, zone, section)}/{hash}/{filename}"
 
     @classmethod
-    def get_ballot_box_file_path_ext(cls, plea, state, city, zone, section, hash, ext, phase = "o"):
-        return cls.get_ballot_box_file_path(plea, state, city, zone, section, hash, f"{phase}{plea:0>5}-{city:0>5}{zone:0>4}{section:0>4}.{ext}")
+    def get_voting_machine_file_path_ext(cls, plea, state, city, zone, section, hash, ext, phase = "o"):
+        return cls.get_voting_machine_file_path(plea, state, city, zone, section, hash, f"{phase}{plea:0>5}-{city:0>5}{zone:0>4}{section:0>4}.{ext}")
