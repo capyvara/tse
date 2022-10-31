@@ -1,7 +1,5 @@
 import datetime
 
-from tse.common.pathinfo import PathInfo
-
 
 # Some .json files contains fields for date and hour of generation
 def get_dh_timestamp(data, d = "dg", h = "hg"):
@@ -49,7 +47,9 @@ class SectionAuxParser:
             return (None, None, None)
 
         valid_hashes = [h for h in data["hashes"] if h["st"] in ("Totalizado", "Recebido") and h["hash"] != "0"]
-        if len(valid_hashes) == 1:
+        if len(valid_hashes) == 0:
+            return (None, None, None)
+        elif len(valid_hashes) == 1:
             return (valid_hashes[0]["hash"],  get_dh_timestamp(valid_hashes[0], "dr", "hr"), valid_hashes[0]["nmarq"])
 
         # Not sure if there's a situation of more than one valid hash, but opt for newest one in the case
@@ -57,10 +57,7 @@ class SectionAuxParser:
             key=lambda h: get_dh_timestamp(h, "dr", "hr"),
             reverse=True)
 
-        if len(sorted_valid_hashes) > 0:
-            return (sorted_valid_hashes[0]["hash"],  get_dh_timestamp(sorted_valid_hashes[0], "dr", "hr"), sorted_valid_hashes[0]["nmarq"])
-
-        return (None, None, None)
+        return (sorted_valid_hashes[0]["hash"],  get_dh_timestamp(sorted_valid_hashes[0], "dr", "hr"), sorted_valid_hashes[0]["nmarq"])
         
     @staticmethod
     def expand_all_files(data):

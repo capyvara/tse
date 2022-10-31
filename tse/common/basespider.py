@@ -255,6 +255,7 @@ class BaseSpider(scrapy.Spider):
             return None
 
         if not self.validate_index_entry(filename, entry):
+            logging.info("Discarded invalid index entry %s", filename)
             self.index.discard(filename)
             return None
 
