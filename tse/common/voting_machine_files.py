@@ -1,13 +1,19 @@
 import csv
+import datetime
 import io
+import orjson
 import os
 from enum import Enum
-import re
 from typing import IO, Any
 
 import pandas as pd
+import numpy as np
 import py7zr
 
+from tse.utils.grok import GrokProcessor
+
+
+pd.options.mode.string_storage = "pyarrow"
 
 class VotingMachineFileType(Enum):
     BULLETIN = 1
@@ -78,49 +84,76 @@ def read_voting_machine_logs(file, source_filename = None):
     if len(extra_logs) > 0:
         yield from extra_logs
 
-class Grok:
-    PATTERNS = {
-        "PATH": r"(/([\w_%!$@:.,~-]+|\\.)*)+",
-    }
 
-    def compile_grok(pat):
-        return re.compile(re.sub(r'%{(\w+):(\w+)}', 
-            lambda m: "(?P<" + m.group(2) + ">" + PATTERNS[m.group(1)] + ")", pat))
-
-# TODO: Put more common first
-RULES = [
-    r"Urna ligada em (?P<date>.+) às (?P<time>.+)",
-    r"Iniciando aplicação - (?P<env>.+) - (?P<round>.+)",
-    r"Versão da aplicação: (?P<ver_num>.+) - (?P<ver_name>.+)",
-    r"Tamanho da (?P<target>.+): (?P<target_size>.+) MB",
-    r"Verificação de assinatura de aplicação por etapa \[(?P<stage>\d+)\] - \[(?P<path>\d+)\] - \[(?P<result>\d+)\]"
-]
-
-PATTERNS = [re.compile(p) for p in RULES]
-
-def process_message(message: str):
-    for pattern in PATTERNS:
-        match = pattern.match(message)
-        if match:
-            params = match.groupdict()
-            split = []
-            lbound = 0
-            for key, l, r in ((key, *match.span(key)) for key in params.keys()):
-                split.append(message[lbound:l])
-                lbound = r
-                split.append(f"%({key})s")
-            return ("".join(split), params)
-    return (message, None)
+grok_processor = GrokProcessor()
+grok_processor.load_matchers_from_file("data/voting_machine_logs_matchers.txt")
 
 def log_parser(buffer: IO[Any]):
-    wrapper = io.TextIOWrapper(buffer, encoding="latin_1", newline="")
-    reader = csv.reader(wrapper, delimiter="\t")
-    for row in reader:
-        # print('\t'.join(row))
-        print(process_message(row[4]))
-    return
+    with io.TextIOWrapper(buffer, encoding="latin_1", newline="") as wrapper:
+        reader = csv.reader(wrapper, delimiter="\t")
+
+        timestamps = []
+        levels = []
+        apps = []
+        message_categories = {}
+        messages = []
+        message_params = []
+        hashes = []
+
+        lines = 0
+        for row in reader:
+            # strptime is slower
+            # dd/mm/yyyy hh:mm:ss
+            dt = row[0]
+            timestamps.append((datetime.datetime( 
+                    int(dt[6:10]), int(dt[3:5]), int(dt[:2]),
+                    int(dt[11:13]), int(dt[14:16]), int(dt[17:]))))
+
+            levels.append(row[1])
+            apps.append(row[3])
+
+            result = grok_processor.match(row[4], positional=False)
+            message_categories[result[0]] = message_categories.get(result[0], 0) + 1
+            
+            messages.append(result[0])
+            message_params.append(result[1])
+            
+            hashes.append(int(row[5], 16))
+            
+        #     print(f"'{result[0]}' % {result[1]}")
+        #     lines += 1
+        
+        # print("*********************************************************************")
+
+        # for k, v in sorted(message_categories.items(), key=lambda t: t[1], reverse=True):
+        #     print(f"{k} = {v}")
+
+        # print(len(message_categories))
+        # print(lines)
+
+        message_cat = pd.CategoricalDtype(message_categories.keys())
+
+        df = pd.DataFrame({
+            "timestamp": pd.Series(timestamps, dtype="datetime64[ns]"),
+            "level": pd.Series(levels, dtype=pd.CategoricalDtype(["ALERTA", "ERRO", "EXTERNO", "INFO"])),
+            "app": pd.Series(apps, dtype=pd.CategoricalDtype(["ATUE", "GAP", "INITJE", "LOGD", "RED", "SA", "SCUE", "VOTA"])),
+            "message": pd.Series(messages, dtype=message_cat),
+            "message_params": pd.Series(message_params),
+        })
+
+        df2 = df.copy()
+        df2["message_params"] = df2["message_params"].apply(lambda p: orjson.dumps(p).decode("utf-8") if p else None).astype(pd.StringDtype("pyarrow"))
+        df2.to_parquet(f"data/temp/log_tests/log_pq.parquet", index=False, engine="pyarrow", compression="brotli")
+        df2.to_csv(f"data/temp/log_tests/log_ts.tsv", index=False, sep="\t", quotechar="'")
+
+        df3 = pd.DataFrame.from_dict(message_categories, orient="index", columns=["count"]).sort_values(by="count", ascending=False)
+        df3.index.name = "message"
+        df3.to_csv(f"data/temp/log_tests/log_ts_cats.tsv", index=True, sep="\t", quotechar="'")
+        pass
 
 test_log_path = "data/download/oficial/ele2022/arquivo-urna/406/dados/ac/01066/0004/0077/395459446c754b34572b56304a706a6a413454646f6f5a6f5664426f5169564241506566444932644f75493d/o00406-0106600040077.logjez"
+
+#test_log_path = "data/temp/DadosDeUrna_o00406-7183804070205sa_1665898395680/o00406-7183804070205.logsajez"
 with py7zr.SevenZipFile(test_log_path, 'r') as zip:
     log_parser(zip.read("logd.dat")["logd.dat"])
     pass

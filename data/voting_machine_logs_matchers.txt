@@ -1,0 +1,64 @@
+A chave pública (%{GREEDYDATA:keyname}) foi encontrada na mídia
+Arquivo %{GREEDYDATA:log_file} referente ao log da ME
+Batimento de digitais retornou o score %{POSINT:score:int}
+Biometria coletada não é do mesário %{INT:id_attendent} (%{INT:id_finger})
+Biometria do mesário %{INT:id_attendent} encontrada nos arquivos coletados (%{INT:id_finger})
+Capturada a digital. Tentativa [%{POSINT:cur:int}] de [%{POSINT:tot:int}]
+Copiando arquivo de resultado para ME: [%{DATA:ext}]
+Código de carga %{GREEDYDATA:load_code} gravado na tabela de correspondência
+Data e hora da geração da MR: %{DATE_BR:date:datebr} às %{TIME:time:time}
+Data e hora da geração da mídia de carga: %{DATE_BR:date:datebr} %{TIME:time:time}
+Data e hora que foi digitada pelo operador: %{DATE_BR:date:datebr} - %{TIME:time:time}
+Dedo reconhecido e o score para habilitá-lo. %{GREEDYDATA:finger} - Score [%{INT:score:int}]
+Digital capturada não corresponde a digital do eleitor: Polegar Direito [score %{INT:rt_score:int}], Polegar Esquerdo [score %{INT:lt_score:int}], Indicador Direito [score %{INT:rp_score:int}], Indicador Esquerdo [score %{INT:lp_score:int}]
+Eleitor sem atividade por %{POSINT:idle_time:int} segundos
+Espaço livre na %{GREEDYDATA:target} [%{NUMBER:target_size:float} MB]
+Espaço utilizado na %{GREEDYDATA:target} [%{NUMBER:target_size:float} MB]
+Espaço Utilizado na %{GREEDYDATA:target} [%{NUMBER:target_size:float} MB]
+Fase da UE: %{GREEDYDATA:phase}
+Fim do teste %{GREEDYDATA:subject} - %{GREEDYDATA:result}
+Gerando arquivo de resultado [%{DATA:ext}] + [%{DATA:phase}]
+Gerando relatório [%{DATA:report}] [%{DATA:phase}]
+Identificador da mídia de carga: %{BASE16NUM:id_media}
+Identificação de assinatura das chaves %{GREEDYDATA:key}
+Identificação de assinatura do arquivo %{GREEDYDATA:file}
+Identificação do Modelo de Urna: %{GREEDYDATA:model}
+Imprimindo relatório [%{DATA:report}]
+Imprimindo relatório [%{DATA:report}] via nº [%{POSINT:copy:int}]
+Imprimindo via [ %{POSINT:copy:int} ] do BU
+Imprimindo via [%{POSINT:copy:int}] [%{DATA:kind}]
+Iniciando aplicação - %{GREEDYDATA} - %{GREEDYDATA:env} - %{GREEDYDATA:round}
+Iniciando aplicação - %{WORD:env} - %{GREEDYDATA:round}
+Início do teste %{GREEDYDATA:subject}
+Local de Votação: %{INT:place}
+Mesário %{INT:id_attendent} não é eleitor da seção
+Mesário %{INT:id_attendent} registrado
+Mesário %{INT:id_attendent} é eleitor da seção
+MR gerada pelo computador: %{GREEDYDATA:id_media}
+MR gerada pelo usuário: %{INT:user}
+Município: %{INT:city}
+Mídia de carga gerada pelo computador: %{GREEDYDATA:id_media}
+Mídia de carga gerada pelo usuário: %{INT:user}
+Número de série da MR: %{BASE16NUM:serial}
+Número de tentativas de reconhecimento do dedo. Tentativa [%{POSINT:cur:int}] de [%{POSINT:tot:int}]
+O número de série da chave pública (%{POSINT:keynum}.pub): %{BASE16NUM:serial}
+Pedido de leitura da biometria do mesário %{INT:id_attendent}
+Quantidade de memória livre [%{NUMBER:size:float} MB]
+Resultado da verificação da mídia externa %{GREEDYDATA} : %{WORD:result}
+Resultado da verificação da mídia interna: %{WORD:result}
+Serial da MI copiada da MV da urna original: %{BASE16NUM:serial}
+Serial de votação da MV: %{BASE16NUM:serial} %{DATE_BR:date:datebr} às %{TIME:time:time} em %{GREEDYDATA:id_media}
+Seção Eleitoral: %{INT:section}
+Seção informada pelo operador: %{INT:section}
+Solicita digital. Tentativa [%{POSINT:cur:int}] de [%{POSINT:tot:int}]
+Tamanho da %{GREEDYDATA}: %{NUMBER:target_size:float} MB
+Tecla pressionada: %{GREEDYDATA:key}
+Timeout de reconhecimento do dedo. Tentativa [%{POSINT:cur:int}] de [%{POSINT:tot:int}]
+Tipo de habilitação do eleitor [%{DATA:id_kind}]
+Turno da UE: %{GREEDYDATA:round}
+Urna ligada em %{DATE_BR:date:datebr} às %{TIME:time:time}
+Verificação de assinatura - Etapa [%{POSINT:stage:int}]
+Verificação de assinatura de %{WORD} por etapa [%{POSINT:stage:int}] - [%{UNIXPATH:path}] - [%{DATA:result}]
+Versão da aplicação: %{VERSION4:ver_num} - %{GREEDYDATA:ver_name}
+Voto confirmado para [%{DATA:position}]
+Zona Eleitoral: %{INT:zone}
