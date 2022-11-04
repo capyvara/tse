@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 try:
     import regex as re
 except ImportError as e:
@@ -5,19 +7,21 @@ except ImportError as e:
 
 import datetime
 import functools
-from typing import Callable, Dict, Iterable, Any, Tuple
+from typing import Callable, Dict, Iterable, Any, Tuple, Union
 
 # https://github.com/garyelephant/pygrok
 class GrokProcessor:
     Converter = Callable[[str], Any]
 
-    class Matcher():
+    class Matcher:
         regex: re.Pattern
         type_map: dict[str, str]
+        can_cache: bool
 
-        def __init__(self, regex: re.Pattern, type_map: dict[str, str]):
+        def __init__(self, regex: re.Pattern, type_map: dict[str, str], can_cache):
             self.regex = regex
             self.type_map = type_map
+            self.can_cache = can_cache
 
     # https://github.com/garyelephant/pygrok/blob/master/pygrok/patterns/grok-patterns
     _base_predefined: dict[str, str] = {
@@ -49,6 +53,9 @@ class GrokProcessor:
     _predefined: dict[str, str]
     _type_converters = dict[str, Converter]
     _matchers: list[Matcher]
+    _matcher_format_cache: dict[(Matcher, bool), str]
+    _noMatchCache: set
+    _groupedMatchers: list[Matcher]
 
     _base_type_converters : dict[str, Converter] = {
         "int": lambda x: int(x),
@@ -63,13 +70,40 @@ class GrokProcessor:
         self._predefined = self._base_predefined | predefined
         self._type_converters = self._base_type_converters | type_converters
         self._matchers = []
-        self._matcher_format_cache = {}
+        self._invalidate_caches()
 
-    def _build_grok(self, pattern: str, flags: re.RegexFlag = 0) -> Matcher:
+    def _invalidate_caches(self):
+        self._matcher_format_cache = {}
+        self._noMatchCache = set()
+
+    def add_matchers(self, matchers: Iterable[str], flags: re.RegexFlag = 0) -> GrokProcessor:
+        self._matchers.extend((self._build_matcher(p, flags) for p in matchers))
+        self._invalidate_caches()
+        return self
+
+    def load_matchers_from_file(self, file: str, flags: re.RegexFlag = 0) -> GrokProcessor:
+        with open(file, 'r', encoding='utf-8') as file:
+            for line in (l.strip() for l in file):
+                if line == '':
+                    continue
+
+                can_cache = True
+
+                if line.startswith(r"\\"):
+                    line = line[1:]
+                    can_cache = False
+                else:
+                    line = re.sub(r"%\\{([:\w]+)\\}", r"%{\1}", re.escape(line, literal_spaces=True))
+
+                self._matchers.append(self._build_matcher(line, can_cache, flags))
+
+        self._invalidate_caches()
+        return self
+
+    def _build_matcher(self, pattern: str, can_cache = False, flags: re.RegexFlag = 0) -> Matcher:
         iterations = 100
 
         type_map = {}
-        pattern = re.sub(r"%\\{([:\w]+)\\}", r"%{\1}", re.escape(pattern))
 
         while True:
             if iterations == 0:
@@ -85,69 +119,85 @@ class GrokProcessor:
                 pattern)
 
             # Unnamed group
-            pattern = re.sub(r'%{(\w+)}',
+            pattern, num_subs = re.subn(r'%{(\w+)}',
                 lambda m: "(" + self._predefined[m.group(1)] + ")",
                 pattern)
+
+            if num_subs > 0:
+                can_cache = False
             
             if re.search('%{\w+(:\w+)?(:\w+)?}', pattern) is None:
-                return GrokProcessor.Matcher(re.compile(pattern, flags), type_map)
-
-    def add_matchers(self, matchers: Iterable[str], flags: re.RegexFlag = 0):
-        self._matchers.extend((self._build_grok(p, flags) for p in matchers))
-
-    def load_matchers_from_file(self, file: str, flags: re.RegexFlag = 0):
-        with open(file, 'r', encoding='utf-8') as file:
-            for line in (l.strip() for l in file):
-                if line == '' or line.startswith('#'):
-                    continue
-
-                self._matchers.append(self._build_grok(line, flags))
+                return GrokProcessor.Matcher(re.compile(pattern, flags), type_map, can_cache)
 
     @functools.lru_cache(maxsize=512, typed=True)
     def _string_lru_cache(self, string: str) -> str:
         return string
 
-    def match(self, text: str, *, fullmatch=True, positional=False) -> Tuple[str, dict]:
+    def match(self, text: str, *, fullmatch=True, pos_msg_params=False) -> Tuple[str, Union[dict, list]]:
+        if text in self._noMatchCache:
+            return (text, None)
+
         for i in range(0, len(self._matchers)):
             matcher = self._matchers[i]
 
-            match = matcher.regex.fullmatch(text) if fullmatch else matcher.regex.match(text)
+            match = matcher.regex.fullmatch(text, concurrent=True) if fullmatch else matcher.regex.match(text, concurrent=True)
             if match:
+                matcherkey = (matcher, pos_msg_params)
                 params = match.groupdict()
+                format = None
 
-                split = []
-                lbound = 0
-                for key, value, l, r in [(key, value, *match.span(key)) for key, value in params.items()]:
-                    if key == "__del__":
-                        del params[key]
+                if matcher.can_cache and matcherkey in self._matcher_format_cache:
+                    format = self._matcher_format_cache[matcherkey]
+                    for key, value in params.items():
+                        if key == "__del__":
+                            del params[key]
+                            continue
+
+                        try:
+                            type = matcher.type_map[key]
+                            converter = self._type_converters[type]
+                            params[key] = converter(value)
+                        except KeyError:
+                            if len(value) < 32:
+                                params[key] = self._string_lru_cache(value)
+                else:
+                    split = []
+                    lbound = 0
+                    for key, value, l, r in [(key, value, *match.span(key)) for key, value in params.items()]:
+                        if key == "__del__":
+                            del params[key]
+                            split.append(text[lbound:l])
+                            lbound = r
+                            continue
+
+                        try:
+                            type = matcher.type_map[key]
+                            converter = self._type_converters[type]
+                            params[key] = converter(value)
+                        except KeyError:
+                            if len(value) < 32:
+                                params[key] = self._string_lru_cache(value)
+
                         split.append(text[lbound:l])
                         lbound = r
-                        continue
 
-                    try:
-                        type = matcher.type_map[key]
-                        converter = self._base_type_converters[type]
-                        params[key] = converter(params[key])
-                    except KeyError:
-                        if len(value) < 32:
-                            params[key] = self._string_lru_cache(value)
+                        if pos_msg_params:
+                            split.append("%s")
+                        else:
+                            split.append(f"%({key})s")
 
-                    split.append(text[lbound:l])
-                    lbound = r
+                    split.append(text[lbound:])
+                    format = "".join(split)
 
-                    if positional:
-                        split.append("%s")
-                    else:
-                        split.append(f"%({key})s")
-
-                split.append(text[lbound:])
-                format = "".join(split)
+                    if matcher.can_cache:
+                        self._matcher_format_cache[matcherkey] = format
 
                 # Optimization: Bubble up the matched one so most common goes first in the list
                 if i > 0:
                     self._matchers[i - 1], self._matchers[i] = self._matchers[i], self._matchers[i - 1]
 
-                return (format, params if not positional else list(params.values()))
+                return (format, params if not pos_msg_params else list(params.values()))
 
+        self._noMatchCache.add(text)
         return (text, None)
 

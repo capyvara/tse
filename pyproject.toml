@@ -29,6 +29,7 @@ ipywidgets = "^7.0"
 tdqm = "^0.0.1"
 regex = "^2022.10.31"
 pyarrow = "^10.0.0"
+plotly = "^5.11.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
