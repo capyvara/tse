@@ -72,13 +72,14 @@ class GrokProcessor:
         self._predefined = self._base_predefined | predefined
         self._type_converters = self._base_type_converters | type_converters
         self._matchers = []
+        self._string_lru_cache = functools.lru_cache(512)(self.__string_lru_cache)
         self._invalidate_caches()
 
     def _invalidate_caches(self):
         self._matcher_format_cache = {}
         self._noMatchCache = set()
         self._matchCache = LRU(1024)
-        GrokProcessor._string_lru_cache.cache_clear()
+        self._string_lru_cache.cache_clear()
 
     def add_matchers(self, matchers: Iterable[str], flags: re.RegexFlag = 0) -> GrokProcessor:
         self._matchers.extend((self._build_matcher(p, flags) for p in matchers))
@@ -133,9 +134,8 @@ class GrokProcessor:
             if re.search('%{\w+(:\w+)?(:\w+)?}', pattern) is None:
                 return GrokProcessor.Matcher(re.compile(pattern, flags), type_map, can_cache_format)
 
-    @staticmethod
-    @functools.lru_cache(maxsize=512)
-    def _string_lru_cache(string: str) -> str:
+    # Reuse common strings for field names
+    def __string_lru_cache(self, string: str) -> str:
         return string
 
     def match(self, text: str, *, fullmatch=True, pos_msg_params=False) -> Tuple[str, Union[dict, list]]:
@@ -164,7 +164,7 @@ class GrokProcessor:
                         params[key] = converter(value)
                     except KeyError:
                         if len(value) < 32:
-                            params[key] = GrokProcessor._string_lru_cache(value)
+                            params[key] = self._string_lru_cache(value)
             else:
                 split = []
                 lbound = 0
@@ -181,7 +181,7 @@ class GrokProcessor:
                         params[key] = converter(value)
                     except KeyError:
                         if len(value) < 32:
-                            params[key] = GrokProcessor._string_lru_cache(value)
+                            params[key] = self._string_lru_cache(value)
 
                     split.append(text[lbound:l])
                     lbound = r

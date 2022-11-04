@@ -85,27 +85,7 @@ def read_voting_machine_logs(file, source_filename = None):
     if len(extra_logs) > 0:
         yield from extra_logs
 
-class VotingMachineLogFile:
-    _grok_processor = GrokProcessor({
-                                        "NAPIEXCEPTION": r"N\dapi\d+C.*ExceptionE - \((?:Código \(%{INT:code}\))?\)"
-                                    }).load_matchers_from_file("data/voting_machine_logs_matchers.txt")
-
-    @classmethod
-    def read_compressed_logs(cls, file: Union[BinaryIO, str, os.PathLike], source_filename: str = None) ->  Iterable[Tuple[str, BinaryIO]]:
-        if not source_filename and isinstance(file, str):
-            source_filename = os.path.basename(file)
-
-        # To speed up: https://github.com/miurahr/py7zr/issues/489
-        with py7zr.SevenZipFile(file, 'r', mp = False) as zip:
-            for filename, bio in zip.readall().items():
-                if os.path.splitext(filename)[1] == ".jez":
-                    yield from cls.read_compressed_logs(bio, filename)
-                    continue
-
-                if filename != "logd.dat":
-                    continue
-
-                yield (source_filename, bio)
+class VotingMachineLogProcessor:
 
     class Row(NamedTuple):
         timestamp: datetime.datetime
@@ -116,8 +96,30 @@ class VotingMachineLogFile:
         message_params: Optional[Union[dict, list]]
         hash: int
 
-    @classmethod
-    def parse_log(cls, source_filename: str, bio: BinaryIO, *, pos_msg_params: bool = False) ->  Iterable[Row]:
+    _grok_processor: GrokProcessor
+
+    def __init__(self):
+        self._grok_processor = GrokProcessor({
+                                        "NAPIEXCEPTION": r"N\dapi\d+C.*ExceptionE - \((?:Código \(%{INT:code}\))?\)"
+                                    }).load_matchers_from_file("data/voting_machine_logs_matchers.txt")
+
+    def read_compressed_logs(self, file: Union[BinaryIO, str, os.PathLike], source_filename: str = None) ->  Iterable[Tuple[str, BinaryIO]]:
+        if not source_filename and isinstance(file, str):
+            source_filename = os.path.basename(file)
+
+        # To speed up: https://github.com/miurahr/py7zr/issues/489
+        with py7zr.SevenZipFile(file, 'r', mp = False) as zip:
+            for filename, bio in zip.readall().items():
+                if os.path.splitext(filename)[1] == ".jez":
+                    yield from self.read_compressed_logs(bio, filename)
+                    continue
+
+                if filename != "logd.dat":
+                    continue
+
+                yield (source_filename, bio)
+
+    def parse_log(self, source_filename: str, bio: BinaryIO, *, pos_msg_params: bool = False) ->  Iterable[Row]:
         with io.TextIOWrapper(bio, encoding="latin_1", newline="") as wrapper:
             reader = csv.reader(wrapper, delimiter="\t")
 
@@ -142,10 +144,10 @@ class VotingMachineLogFile:
                             int(dt[6:10]), int(dt[3:5]), int(dt[:2]),
                             int(dt[11:13]), int(dt[14:16]), int(dt[17:]))))
 
-                    message, message_params = cls._grok_processor.match(row[4], pos_msg_params=pos_msg_params)
+                    message, message_params = self._grok_processor.match(row[4], pos_msg_params=pos_msg_params)
 
                     row_count += 1
-                    yield cls.Row(timestamp, level=row[1], vm_id=row[2], app=row[3], 
+                    yield VotingMachineLogProcessor.Row(timestamp, level=row[1], vm_id=row[2], app=row[3], 
                         message=message, message_params=message_params, hash=hash)
                 except Exception as ex:
                     logging.warning("Error reading row %s @ %d: %s", source_filename, row_count, ex)
@@ -168,7 +170,10 @@ def message_cat():
     message_categories = {}
     count = -1
 
+    log_processor = VotingMachineLogProcessor()
+
     def dump():
+        return
         df_message_categories = pd.DataFrame.from_dict(message_categories, orient="index", columns=["count"]).sort_values(by="count", ascending=False)
         df_message_categories.index.name = "message"
         df_message_categories.to_csv(f"data/temp/all_message_categories.tsv", index=True, sep="\t", quotechar="'")
@@ -185,8 +190,8 @@ def message_cat():
 
         log_path = PathInfo.get_voting_machine_file_path(plea, *index, row["hash"], log_filename)    
 
-        for filename, bio in VotingMachineLogFile.read_compressed_logs(PathInfo.get_local_path(settings, log_path)):
-            for row in VotingMachineLogFile.parse_log(filename, bio):
+        for filename, bio in log_processor.read_compressed_logs(PathInfo.get_local_path(settings, log_path)):
+            for row in log_processor.parse_log(filename, bio):
                 message_categories[row.message] = message_categories.get(row.message, 0) + 1
 
         if count % 100 == 0:
