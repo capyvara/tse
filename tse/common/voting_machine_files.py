@@ -13,7 +13,6 @@ import py7zr
 
 from tse.utils.grok import GrokProcessor
 
-
 pd.options.mode.string_storage = "pyarrow"
 
 class VotingMachineFileType(Enum):
@@ -88,10 +87,12 @@ def read_voting_machine_logs(file, source_filename = None):
 class VotingMachineLogProcessor:
 
     class Row(NamedTuple):
+        count: int
         timestamp: datetime.datetime
         level: str
         vm_id: str
         app: str
+        raw_message: str
         message: str
         message_params: Optional[Union[dict, list]]
         hash: int
@@ -100,7 +101,8 @@ class VotingMachineLogProcessor:
 
     def __init__(self):
         self._grok_processor = GrokProcessor({
-                                        "NAPIEXCEPTION": r"N\dapi\d+C.*ExceptionE - \((?:Código \(%{INT:code}\))?\)"
+                                        "NAPI_EXCEPTION": r"N\dapi\d+C.*ExceptionE - \((?:Código \(%{INT:code:int}\))?\) ",
+                                        "ST_ERROR": r"St\d{2}.+?_error - \(\) "
                                     }).load_matchers_from_file("data/voting_machine_logs_matchers.txt")
 
     def read_compressed_logs(self, file: Union[BinaryIO, str, os.PathLike], source_filename: str = None) ->  Iterable[Tuple[str, BinaryIO]]:
@@ -145,12 +147,11 @@ class VotingMachineLogProcessor:
                             int(dt[11:13]), int(dt[14:16]), int(dt[17:]))))
 
                     message, message_params = self._grok_processor.match(row[4], pos_msg_params=pos_msg_params)
-
                     row_count += 1
-                    yield VotingMachineLogProcessor.Row(timestamp, level=row[1], vm_id=row[2], app=row[3], 
-                        message=message, message_params=message_params, hash=hash)
-                except Exception as ex:
-                    logging.warning("Error reading row %s @ %d: %s", source_filename, row_count, ex)
+                    yield VotingMachineLogProcessor.Row(count=row_count, timestamp=timestamp, level=row[1], vm_id=row[2], app=row[3], 
+                        raw_message=row[4], message=message, message_params=message_params, hash=hash)
+                except ValueError as ex:
+                    logging.warning("Error reading %s @ %d: %s", source_filename, row_count, repr(ex))
                     continue
 
 
@@ -166,6 +167,8 @@ states= settings["STATES"]
 
 df = pd.read_parquet("data/all_sections_1st_round.parquet")
 
+print(len(df[df["hash"].isna()]))
+
 def message_cat():
     message_categories = {}
     count = -1
@@ -173,15 +176,15 @@ def message_cat():
     log_processor = VotingMachineLogProcessor()
 
     def dump():
-        return
         df_message_categories = pd.DataFrame.from_dict(message_categories, orient="index", columns=["count"]).sort_values(by="count", ascending=False)
         df_message_categories.index.name = "message"
-        df_message_categories.to_csv(f"data/temp/all_message_categories.tsv", index=True, sep="\t", quotechar="'")
+        df_message_categories.to_csv(f"data/temp/all_message_categories_2.tsv", index=True, sep="\t", quotechar="'")
 
+    #for index, row in tqdm(df.iloc[13000:].iterrows(), total=472075):
     for index, row in tqdm(df.iterrows(), total=472075):
         count += 1
 
-        if len(row["files"]) == 0:
+        if pd.isna(row["hash"]):
             continue
 
         log_filename = get_voting_machine_files_map(row["files"]).get(VotingMachineFileType.LOG, None)
@@ -192,7 +195,8 @@ def message_cat():
 
         for filename, bio in log_processor.read_compressed_logs(PathInfo.get_local_path(settings, log_path)):
             for row in log_processor.parse_log(filename, bio):
-                message_categories[row.message] = message_categories.get(row.message, 0) + 1
+                if row.message_params:
+                    message_categories[row.raw_message] = message_categories.get(row.raw_message, 0) + 1
 
         if count % 100 == 0:
             dump()

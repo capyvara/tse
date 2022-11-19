@@ -66,3 +66,6 @@ Verificação de assinatura de %{WORD} por etapa [%{POSINT:stage:int}] - [%{UNIX
 Versão da aplicação: %{VERSION4:ver_num} - %{GREEDYDATA:ver_name}
 Voto confirmado para [%{DATA:position}]
 Zona Eleitoral: %{INT:zone}
+
+%{NAPI_EXCEPTION}%{GREEDYDATA:message}
+%{ST_ERROR}%{GREEDYDATA:message}

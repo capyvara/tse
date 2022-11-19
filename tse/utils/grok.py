@@ -151,45 +151,46 @@ class GrokProcessor:
             params = match.groupdict()
             format = None
 
+            def process_param(key, value):
+                if not value:
+                    return
+                try:
+                    type = matcher.type_map[key]
+                    converter = self._type_converters[type]
+                    params[key] = converter(value)
+                except KeyError:
+                    if len(value) < 32:
+                        params[key] = self._string_lru_cache(value)
+
             if matcher.can_cache_format and matcherkey in self._matcher_format_cache:
                 format = self._matcher_format_cache[matcherkey]
-                for key, value in params.items():
+                for key, value in list(params.items()):
                     if key == "__del__":
                         del params[key]
                         continue
 
-                    try:
-                        type = matcher.type_map[key]
-                        converter = self._type_converters[type]
-                        params[key] = converter(value)
-                    except KeyError:
-                        if len(value) < 32:
-                            params[key] = self._string_lru_cache(value)
+                    process_param(key, value)
             else:
                 split = []
                 lbound = 0
-                for key, value, l, r in [(key, value, *match.span(key)) for key, value in params.items()]:
+                for key, value, l, r in [(key, value, *match.span(key)) for key, value in params.items()]:                        
                     if key == "__del__":
                         del params[key]
-                        split.append(text[lbound:l])
-                        lbound = r
+                        if l > 0:
+                            split.append(text[lbound:l])
+                            lbound = r
                         continue
 
-                    try:
-                        type = matcher.type_map[key]
-                        converter = self._type_converters[type]
-                        params[key] = converter(value)
-                    except KeyError:
-                        if len(value) < 32:
-                            params[key] = self._string_lru_cache(value)
+                    process_param(key, value)
 
-                    split.append(text[lbound:l])
-                    lbound = r
+                    if l > 0:
+                        split.append(text[lbound:l])
+                        lbound = r
 
-                    if pos_msg_params:
-                        split.append("%s")
-                    else:
-                        split.append(f"%({key})s")
+                        if pos_msg_params:
+                            split.append("%s")
+                        else:
+                            split.append(f"%({key})s")
 
                 split.append(text[lbound:])
                 format = "".join(split)
