@@ -10,10 +10,10 @@ def log_progress(iterable, total=None, format=None, batch_size=None):
 
     if total:
         batch_size = batch_size or total / 10
-        format = "Processed %d / %d (%.0f %%)"
+        format = "%d / %d (%.0f %%)"
     else:
         batch_size = batch_size or 1
-        format = "Processed %d"
+        format = "%d"
 
     batch_size = int(batch_size)
 
@@ -26,10 +26,16 @@ def log_progress(iterable, total=None, format=None, batch_size=None):
              if count == 1 or count % batch_size == 0:
                 logging.info(format, count)
         else:
-            if count == 1 or count % batch_size == 0 or count == total:
+            if count == 1 or count % batch_size == 0:
                 # Delay logging last batch to last iteration
-                if count != total and count == (total - (total % batch_size)):
+                if count == (total - (total % batch_size)):
                     continue
+
+                if count > total:
+                    total = count
 
                 percent = (count / total) * 100.0
                 logging.info(format, count, total, percent)
+    
+    if total and count < total:
+        logging.info(format, count, count, 100.0)

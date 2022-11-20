@@ -24,13 +24,13 @@ optional = true
 [tool.poetry.group.analysis.dependencies]
 pandas = "^1.5.0"
 jupyter = "^1.0.0"
-py7zr = "^0.20.0"
+py7zr = {git = "https://github.com/miurahr/py7zr.git"}
 ipywidgets = "^7.0"
 tdqm = "^0.0.1"
 regex = "^2022.10.31"
 pyarrow = "^10.0.0"
 plotly = "^5.11.0"
-dask = "^2022.10.2"
+dask = {extras = ["complete"], version = "^2022.11.1"}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
