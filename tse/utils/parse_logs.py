@@ -2,7 +2,7 @@ import os
 import zipfile
 import logging
 import base64
-from datetime import timezone, time
+from datetime import datetime, timezone, time
 import mmh3
 import re
 import orjson
@@ -30,8 +30,8 @@ def scan_dir(dir):
                 continue
 
             if os.path.splitext(entry.name)[1] == ".zip":
-                if not "_AC" in entry.name:
-                    continue
+                # if not "_AC" in entry.name:
+                #     continue
 
                 with zipfile.ZipFile(entry.path, "r") as zip:
                     for info in zip.infolist():
@@ -56,7 +56,7 @@ def read_tse_cities():
     df["MUNICIPIO_CAPITAL"] = df["MUNICIPIO_CAPITAL"].astype(bool)
     return df.set_index(["SG_UF", "CD_MUNICIPIO"]).sort_index()
 
-def get_index_id(filename, row_num):
+def get_index_id(filename, row_num = 0):
     return base64.urlsafe_b64encode(mmh3.hash_bytes(filename + str(row_num))).decode("ascii").rstrip("=") 
 
 def dict_process(d):
@@ -71,7 +71,7 @@ def dict_process(d):
 
 def worker_name():
     try:
-        get_worker()
+        return get_worker().name
     except ValueError:
         return ""
 
@@ -80,7 +80,6 @@ def part(partition, partition_info=None):
         return partition
 
     logger = logging.getLogger("distributed.worker")
-    logger.setLevel(logging.INFO)
 
     es_loggers = logging.getLogger("elastic_transport.transport")
     es_loggers.setLevel(logging.WARNING)
@@ -127,40 +126,56 @@ def part(partition, partition_info=None):
                 section = file_match.group("section").lstrip("0")
 
                 city_info = cities.loc[(state, city)]
-                
-                def gen_rows():
+
+                commonfields = {
+                    "year": int(year),
+                    "round": int(round),
+                    "plea": plea,
+                    "state": state,
+                    "city": city,
+                    "city_ibge": city_info["CD_MUNICIPIO_IBGE"],
+                    "city_name": city_info["NM_MUNICIPIO"],
+                    "zone": zone,
+                    "section": section,
+                }
+            
+                def gen_docs():
                     with zip.open(log_filename) as file:
                         for filename, bio in log_processor.read_compressed_logs(file, log_filename):
                             for row in log_processor.parse_log(bio, filename):
                                 doc = {
+                                    "_index": "voting-machine-logs",
                                     "_id": get_index_id(filename, row.number),
-                                    "year": year,
-                                    "round": round,
-                                    "plea": plea,
-                                    "state": state,
-                                    "city": city,
-                                    "city_ibge": city_info["CD_MUNICIPIO_IBGE"],
-                                    "city_name": city_info["NM_MUNICIPIO"],
-                                    "zone": zone,
-                                    "section": section,
+                                }
+                                doc.update(commonfields)
+                                doc.update({
                                     "logfilename": filename,
                                     "logtype": "contingency" if os.path.splitext(filename)[1] == ".jez" else "main",
-                                    "row": {
-                                        "num": row.number,
-                                        "timestamp": row.timestamp.astimezone(timezone.utc),
-                                        "level": row.level,
-                                        "vm_id": row.vm_id,
-                                        "app": row.app,
-                                        "raw_message": row.raw_message,
-                                        "message": row.message,
-                                        "message_params": dict_process(row.message_params),
-                                        "hash": "{:016X}".format(row.hash)
-                                    }
-                                }
+                                    "rownum": row.number,
+                                    "timestamp": row.timestamp.astimezone(timezone.utc),
+                                    "level": row.level,
+                                    "vm_id": row.vm_id,
+                                    "app": row.app,
+                                    "message": row.message,
+                                    "message_template": row.message_template,
+                                    "message_params": dict_process(row.message_params),
+                                    "hash": "{:016X}".format(row.hash)
+                                })
                                 yield doc
+                    
+                    doc = {
+                        "_index": "voting-machine-logfiles",
+                        "_id": get_index_id(filename),
+                    }
+                    doc.update(commonfields)
+                    doc.update({
+                        "logfilename": log_filename,
+                        "timestamp": datetime.utcnow()
+                    })
+                    yield doc
 
-                rows = list(gen_rows())
-                bulk(client=es_client, index="index-logs-voting-machine", actions=rows, chunk_size=8192)
+                bulk(client=es_client, actions=gen_docs(), chunk_size=1000)
+
                 logger.info("%s | Finished %s", worker_name(), log_filename)
 
     return partition
@@ -177,13 +192,103 @@ def collect_all_files() -> pd.Series:
     logging.info("Grouped into %d items", len(df))
     return df
 
+
+def create_voting_machine_logs_index(client):
+    if client.indices.exists(index="voting-machine-logs"):
+        return
+
+    client.indices.create(
+        index="voting-machine-logs",
+        settings={
+            "number_of_shards": 1, 
+            "codec": "best_compression",
+            "query": {
+                "default_field": "row.message"
+            }
+        },
+        mappings={
+            "dynamic_templates": [
+                {
+                    "string_as_keyword": {
+                        "path_match": "row.message_params.*",
+                        "match_mapping_type": "string",
+                        "mapping": {
+                            "type": "keyword",
+                            "ignore_above": 1024,
+                        }
+                    }
+                },
+            ],
+            "properties": {
+                "year": { "type": "short" },
+                "round": { "type": "byte" },
+                "plea": { "type": "keyword" },
+                "state": { "type": "keyword" },
+                "city": { "type": "keyword" },
+                "city_ibge": { "type": "keyword" },
+                "city_name": { "type": "keyword" },
+                "zone": { "type": "keyword" },
+                "section": { "type": "keyword" },
+                "logfilename": { "type": "wildcard" },
+                "logtype": { "type": "keyword" },
+                "rownum": { "type": "integer" },
+                "timestamp": { "type": "date" },
+                "level": { "type": "keyword" },
+                "vm_id": { "type": "keyword" },
+                "app": { "type": "keyword" },
+                "message": { "type": "match_only_text" },
+                "message_template": { "type": "match_only_text" },
+                "message_params": { 
+                    "type": "object",
+                    "subobjects": False,
+                    "dynamic": "runtime",
+                },
+                "hash": { "type": "wildcard" },
+            }
+        }
+    )
+
+def create_voting_machine_logfiles_index(client):
+    if client.indices.exists(index="voting-machine-logfiles"):
+        return
+
+    client.indices.create(
+        index="voting-machine-logfiles",
+        settings={
+            "number_of_shards": 1, 
+            "codec": "best_compression",
+        },
+        mappings={
+            "properties": {
+                "year": { "type": "short" },
+                "round": { "type": "byte" },
+                "plea": { "type": "keyword" },
+                "state": { "type": "keyword" },
+                "city": { "type": "keyword" },
+                "city_ibge": { "type": "keyword" },
+                "city_name": { "type": "keyword" },
+                "zone": { "type": "keyword" },
+                "section": { "type": "keyword" },
+                "logfilename": { "type": "wildcard" },
+                "timestamp": { "type": "date" },
+            }
+        }
+    )
 def main():
     logging.basicConfig(level=logging.INFO)
     disable_gc_diagnosis()
 
-    #with Client(LocalCluster(n_workers=32, threads_per_worker=1)) as client:
-    with Client(LocalCluster(processes=False, threads_per_worker=1)) as client:
+    es_client = Elasticsearch(
+        cloud_id=CLOUD_ID,
+        basic_auth=("elastic", ELASTIC_PASSWORD),
+    )
+    create_voting_machine_logs_index(es_client)
+    create_voting_machine_logfiles_index(es_client)
+
+    #with Client(LocalCluster(n_workers=20, threads_per_worker=1, silence_logs=False)) as client:
+    with Client(LocalCluster(processes=False, threads_per_worker=1, silence_logs=False)) as client:
         logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
+        #dask.config.set(scheduler='single-threaded') # Debug
         all_files = daf.from_pandas(collect_all_files(), chunksize=1000)
         a = all_files.map_partitions(part)
         x = a.persist()

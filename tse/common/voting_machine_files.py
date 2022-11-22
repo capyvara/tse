@@ -60,8 +60,8 @@ class VotingMachineLogProcessor:
         level: str
         vm_id: str
         app: str
-        raw_message: str
         message: str
+        message_template: str
         message_params: Optional[Union[dict, list]]
         hash: int
 
@@ -114,9 +114,9 @@ class VotingMachineLogProcessor:
                                 int(dt[6:10]), int(dt[3:5]), int(dt[:2]),
                                 int(dt[11:13]), int(dt[14:16]), int(dt[17:]))))
 
-                        message, message_params = self._grok_processor.match(row[4], pos_msg_params=pos_msg_params)
+                        message_template, message_params = self._grok_processor.match(row[4], pos_msg_params=pos_msg_params)
                         yield VotingMachineLogProcessor.Row(number=row_number, timestamp=timestamp, level=row[1], vm_id=row[2], app=row[3], 
-                            raw_message=row[4], message=message, message_params=message_params, hash=hash)
+                            message=row[4], message_template=message_template, message_params=message_params, hash=hash)
                     except ValueError as ex:
                         logging.warning("Error reading %s @ %d: %s", source_name, row_number, repr(ex))
                         continue
