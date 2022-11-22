@@ -181,11 +181,11 @@ def main():
     logging.basicConfig(level=logging.INFO)
     disable_gc_diagnosis()
 
-    with Client(LocalCluster(n_workers=32, threads_per_worker=1), asynchronous=True) as client:
-    #with Client(LocalCluster(processes=False, threads_per_worker=1), asynchronous=True) as client:
+    #with Client(LocalCluster(n_workers=32, threads_per_worker=1)) as client:
+    with Client(LocalCluster(processes=False, threads_per_worker=1)) as client:
         logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
         all_files = daf.from_pandas(collect_all_files(), chunksize=1000)
-        a = all_files.map_partitions(client.submit(part))
+        a = all_files.map_partitions(part)
         x = a.persist()
         progress(x)
 
