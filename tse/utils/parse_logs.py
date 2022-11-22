@@ -20,6 +20,8 @@ from elasticsearch.helpers import bulk
 pd.options.mode.string_storage = "pyarrow"
 DOWNLOAD_DIR = "data/download/dadosabertos/transmitted"
 
+ELASTIC_PASSWORD = os.getenv("ELASTIC_PASSWORD")
+CLOUD_ID = os.getenv("CLOUD_ID")
 
 def scan_dir(dir):
     with os.scandir(dir) as it:
