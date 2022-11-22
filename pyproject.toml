@@ -31,6 +31,8 @@ regex = "^2022.10.31"
 pyarrow = "^10.0.0"
 plotly = "^5.11.0"
 dask = {extras = ["complete"], version = "^2022.11.1"}
+elasticsearch = {extras = ["async"], version = "^8.5.1"}
+mmh3 = "^3.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
