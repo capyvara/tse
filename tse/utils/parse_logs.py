@@ -43,7 +43,7 @@ def load_json(path):
         return orjson.loads(f.read())
 
 def read_tse_cities():
-    data = list(CityConfigParser.expand_cities(load_json("data/download/oficial/ele2022/545/config/mun-e000545-cm.json")))
+    data = list(CityConfigParser.expand_cities(load_json("data/mun-default-cm.json")))
 
     df = pd.DataFrame(data,
                         columns=["SG_UF", "CD_MUNICIPIO",
