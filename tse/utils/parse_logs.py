@@ -174,8 +174,7 @@ def part(partition, partition_info=None):
                     })
                     yield doc
 
-                bulk(client=es_client, actions=gen_docs(), chunk_size=1000)
-
+                bulk(client=es_client, actions=gen_docs(), chunk_size=500)
                 logger.info("%s | Finished %s", worker_name(), log_filename)
 
     return partition
@@ -192,8 +191,39 @@ def collect_all_files() -> pd.Series:
     logging.info("Grouped into %d items", len(df))
     return df
 
+def collect_indexed_files(client: Elasticsearch):
+    def gen_query():
+        search_after = None
+        while True:
+            res = client.search(index="voting-machine-logfiles", 
+                fields=["year", "round", "state", "logfilename"],
+                size=1000,
+                source=False,
+                search_after=search_after,
+                sort=[
+                    {"state": "asc"},
+                    {"zone": "asc"},
+                    {"section": "asc"}
+                ] 
+            )
 
-def create_voting_machine_logs_index(client):
+            if not res or len(res["hits"]["hits"]) == 0:
+                break
+
+            for field in (h["fields"] for h in res["hits"]["hits"]):
+                zipname = f"bu_imgbu_logjez_rdv_vscmr_{field['year'][0]}_{field['round'][0]}t_{field['state'][0]}.zip"
+                filename = os.path.splitext(field['logfilename'][0])[0]
+                yield os.path.join(zipname, filename)
+
+            search_after = res["hits"]["hits"][-1]["sort"]
+
+    expected_total = 472027
+    df = pd.Series(log_progress(gen_query(), total=expected_total), dtype=pd.StringDtype(), name="logfilenames")
+    logging.info("Found %d already indexed", len(df))
+
+    return df
+
+def create_voting_machine_logs_index(client: Elasticsearch):
     if client.indices.exists(index="voting-machine-logs"):
         return
 
@@ -282,15 +312,23 @@ def main():
         cloud_id=CLOUD_ID,
         basic_auth=("elastic", ELASTIC_PASSWORD),
     )
+    es_loggers = logging.getLogger("elastic_transport.transport")
+    es_loggers.setLevel(logging.WARNING)
+
     create_voting_machine_logs_index(es_client)
     create_voting_machine_logfiles_index(es_client)
 
-    #with Client(LocalCluster(n_workers=20, threads_per_worker=1, silence_logs=False)) as client:
-    with Client(LocalCluster(processes=False, threads_per_worker=1, silence_logs=False)) as client:
+    with Client(LocalCluster(n_workers=12, threads_per_worker=1, silence_logs=False)) as client:
+    #with Client(LocalCluster(processes=False, threads_per_worker=1, silence_logs=False)) as client:
         logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
         #dask.config.set(scheduler='single-threaded') # Debug
-        all_files = daf.from_pandas(collect_all_files(), chunksize=1000)
-        a = all_files.map_partitions(part)
+
+        all_files = collect_all_files()
+        already_indexed = collect_indexed_files(es_client)
+        to_index = all_files[~all_files.index.isin(already_indexed)]
+        logging.info("Will index %d files", len(to_index))
+        to_index = daf.from_pandas(to_index, chunksize=1000)
+        a = to_index.map_partitions(part)
         x = a.persist()
         progress(x)
 
