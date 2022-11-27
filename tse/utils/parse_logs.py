@@ -3,6 +3,7 @@ import zipfile
 import logging
 import base64
 from datetime import datetime, timezone, time
+import dask
 import mmh3
 import re
 import orjson
@@ -159,7 +160,8 @@ def part(partition, partition_info=None):
                                     "message": row.message,
                                     "message_template": row.message_template,
                                     "message_params": dict_process(row.message_params),
-                                    "hash": "{:016X}".format(row.hash)
+                                    "hash": "{:016X}".format(row.hash),
+                                    "event": { "dataset": "vmlogs" }
                                 })
                                 yield doc
                     
@@ -170,7 +172,8 @@ def part(partition, partition_info=None):
                     doc.update(commonfields)
                     doc.update({
                         "logfilename": log_filename,
-                        "timestamp": datetime.utcnow()
+                        "timestamp": datetime.utcnow(),
+                        "event": { "dataset": "vmlogfiles" }
                     })
                     yield doc
 
@@ -278,6 +281,11 @@ def create_voting_machine_logs_index(client: Elasticsearch):
                     "dynamic": "runtime",
                 },
                 "hash": { "type": "wildcard" },
+                "event": {
+                    "properties": {
+                        "dataset": { type: "constant_keyword" }
+                    }
+                }
             }
         }
     )
@@ -322,19 +330,25 @@ def main():
     create_voting_machine_logs_index(es_client)
     create_voting_machine_logfiles_index(es_client)
 
-    with Client(LocalCluster(n_workers=16, threads_per_worker=1, silence_logs=False)) as client:
-    #with Client(LocalCluster(processes=False, threads_per_worker=1, silence_logs=False)) as client:
-        logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
-        #dask.config.set(scheduler='single-threaded') # Debug
-
+    def process(client = None):
         all_files = collect_all_files()
         already_indexed = collect_indexed_files(es_client)
         to_index = all_files[~all_files.index.isin(already_indexed)]
         logging.info("Will index %d files", len(to_index))
+
         to_index = daf.from_pandas(to_index, chunksize=1000)
         a = to_index.map_partitions(part)
         x = a.persist()
-        progress(x)
+        if client:
+            progress(x)
+        x.compute()
+
+    with Client(LocalCluster(n_workers=16, threads_per_worker=1, silence_logs=False)) as client:
+        logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
+        process(client)
+
+    # dask.config.set(scheduler='single-threaded') # Debug
+    # process()
 
 if __name__ == "__main__":
     main()
