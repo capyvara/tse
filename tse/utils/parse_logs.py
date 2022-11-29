@@ -212,9 +212,10 @@ def part(partition):
 
     evt.wait()
     del df
-    del q
+    del que
+    del pb
     df = None
-    q = None
+    que = None
     pb = None
     gc.collect()
     logger.info("Finished part")
