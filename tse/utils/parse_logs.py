@@ -201,7 +201,7 @@ def part(partition):
     pb = parallel_bulk(client=es_client, actions=get_docs(), chunk_size=10000, thread_count=8, raise_on_error=False)
     for success, info in pb:
         count += 1
-        if count % 100 != 0:
+        if count % 500 == 0:
             gc.collect()
 
     evt.wait()
