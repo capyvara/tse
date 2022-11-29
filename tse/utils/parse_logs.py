@@ -1,5 +1,7 @@
+from collections import deque
 import functools
 import os
+from threading import Thread, Event
 import zipfile
 import logging
 import base64
@@ -16,9 +18,10 @@ from tse.utils import log_progress
 from tse.parsers import CityConfigParser
 
 from elasticsearch import Elasticsearch, TransportError
-from elasticsearch.helpers import bulk
+from elasticsearch.helpers import bulk, parallel_bulk
 
 import asyncio
+import queue
 import concurrent.futures
 
 pd.options.mode.string_storage = "pyarrow"
@@ -34,7 +37,7 @@ def scan_dir(dir):
                 continue
 
             if os.path.splitext(entry.name)[1] == ".zip":
-                # if not "_ZZ" in entry.name:
+                # if not "_PI" in entry.name:
                 #     continue
 
                 with zipfile.ZipFile(entry.path, "r") as zip:
@@ -79,23 +82,93 @@ def worker_name():
     except ValueError:
         return ""
 
-async def part(partition):
+def expand_logs_thread(df, q, e, wname):
     logger = logging.getLogger("distributed.worker")
-
-    es_loggers = logging.getLogger("elastic_transport.transport")
-    es_loggers.setLevel(logging.WARNING)
-
     log_processor = VotingMachineLogProcessor()
     cities = read_tse_cities()
 
     zip_regex = re.compile(r"^bu_imgbu_logjez_rdv_vscmr_(?P<year>\d{4})_(?P<round>\d{1})t_(?P<state>\w{2})\.(?P<ext>\w+)")
     file_regex = re.compile(r"^(o|s|t)(?P<plea>\d{5})-(?P<city>\d{5})(?P<zone>\d{4})(?P<section>\d{4})\.(?P<ext>\w+)")
 
-    es_client = Elasticsearch(
-        cloud_id=CLOUD_ID,
-        basic_auth=("elastic", ELASTIC_PASSWORD),
-        http_compress=True,
-    )
+    for zip_filename, group in df.groupby(level=0):
+        zip_path = os.path.join(DOWNLOAD_DIR, zip_filename)
+        logger.info("%s | Opened zip %s", worker_name(), zip_filename)
+
+        zip_match = zip_regex.match(zip_filename)
+        year = zip_match.group("year")
+        round = zip_match.group("round")
+        state = zip_match.group("state")
+
+        with zipfile.ZipFile(zip_path, "r") as zip:
+            for entry in group.itertuples(True):
+                log_ext = VotingMachineFiles.get_voting_machine_files_map(entry.extensions)[VotingMachineFiles.FileType.LOG]
+                log_filename = entry.Index[1] + log_ext
+
+                file_match = file_regex.match(log_filename)
+                plea = file_match.group("plea").lstrip("0")
+                city = file_match.group("city").lstrip("0")
+                zone = file_match.group("zone").lstrip("0")
+                section = file_match.group("section").lstrip("0")
+
+                city_info = cities.loc[(state, city)]
+
+                commonfields = {
+                    "year": int(year),
+                    "round": int(round),
+                    "plea": plea,
+                    "state": state,
+                    "city": city,
+                    "city_ibge": city_info["CD_MUNICIPIO_IBGE"],
+                    "city_name": city_info["NM_MUNICIPIO"],
+                    "zone": zone,
+                    "section": section,
+                }
+            
+                def gen_docs():
+                    with zip.open(log_filename) as file:
+                        for filename, bio in log_processor.read_compressed_logs(file, log_filename):
+                            for row in log_processor.parse_log(bio, filename):
+                                doc = {
+                                    "_index": "voting-machine-logs",
+                                    "_id": get_index_id(filename, row.number),
+                                }
+                                doc.update(commonfields)
+                                doc.update({
+                                    "logfilename": filename,
+                                    "logtype": "contingency" if os.path.splitext(filename)[1] == ".jez" else "main",
+                                    "rownum": row.number,
+                                    "timestamp": row.timestamp.astimezone(timezone.utc),
+                                    "level": row.level,
+                                    "vm_id": row.vm_id,
+                                    "app": row.app,
+                                    "message": row.message,
+                                    "message_template": row.message_template,
+                                    "message_params": dict_process(row.message_params),
+                                    "hash": "{:016X}".format(row.hash),
+                                    "event": { "dataset": "vmlogs" }
+                                })
+                                yield doc
+                    
+                    doc = {
+                        "_index": "voting-machine-logfiles",
+                        "_id": get_index_id(filename),
+                    }
+                    doc.update(commonfields)
+                    doc.update({
+                        "logfilename": log_filename,
+                        "timestamp": datetime.utcnow(),
+                        "event": { "dataset": "vmlogfiles" }
+                    })
+                    
+                    yield doc
+
+                docs = list(gen_docs())
+                q.put((log_filename, docs))
+                logger.info("%s | Processed %s", wname, log_filename)
+    e.set()
+
+def part(partition):
+    logger = logging.getLogger("distributed.worker")
 
     df = (
         partition.reset_index().
@@ -106,95 +179,28 @@ async def part(partition):
         set_index(["zip_filename", "log_filename"]).sort_index()
     )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
-        upload_tasks = []
+    que = queue.Queue(10)
+    evt = Event()
+    Thread(target=expand_logs_thread, args=(df, que, evt, worker_name()), daemon=True).start()
 
-        for zip_filename, group in df.groupby(level=0):
-            zip_path = os.path.join(DOWNLOAD_DIR, zip_filename)
-            logger.info("%s | Opened zip %s", worker_name(), zip_filename)
+    es_loggers = logging.getLogger("elastic_transport.transport")
+    es_loggers.setLevel(logging.WARNING)
 
-            zip_match = zip_regex.match(zip_filename)
-            year = zip_match.group("year")
-            round = zip_match.group("round")
-            state = zip_match.group("state")
+    es_client = Elasticsearch(
+        cloud_id=CLOUD_ID,
+        basic_auth=("elastic", ELASTIC_PASSWORD),
+        http_compress=True,
+    )
 
-            with zipfile.ZipFile(zip_path, "r") as zip:
-                for entry in group.itertuples(True):
-                    log_ext = VotingMachineFiles.get_voting_machine_files_map(entry.extensions)[VotingMachineFiles.FileType.LOG]
-                    log_filename = entry.Index[1] + log_ext
+    def get_docs():
+        while not evt.is_set():
+            log_filename, docs = que.get()
+            logger.info("%s | Sent %s (%d docs)", worker_name(), log_filename, len(docs))
+            yield from docs
+    
+    deque(parallel_bulk(client=es_client, actions=get_docs(), chunk_size=10000, thread_count=8, raise_on_error=False), 0)
 
-                    file_match = file_regex.match(log_filename)
-                    plea = file_match.group("plea").lstrip("0")
-                    city = file_match.group("city").lstrip("0")
-                    zone = file_match.group("zone").lstrip("0")
-                    section = file_match.group("section").lstrip("0")
-
-                    city_info = cities.loc[(state, city)]
-
-                    commonfields = {
-                        "year": int(year),
-                        "round": int(round),
-                        "plea": plea,
-                        "state": state,
-                        "city": city,
-                        "city_ibge": city_info["CD_MUNICIPIO_IBGE"],
-                        "city_name": city_info["NM_MUNICIPIO"],
-                        "zone": zone,
-                        "section": section,
-                    }
-                
-                    def gen_actions():
-                        with zip.open(log_filename) as file:
-                            for filename, bio in log_processor.read_compressed_logs(file, log_filename):
-                                for row in log_processor.parse_log(bio, filename):
-                                    doc = {
-                                        "_index": "voting-machine-logs",
-                                        "_id": get_index_id(filename, row.number),
-                                    }
-                                    doc.update(commonfields)
-                                    doc.update({
-                                        "logfilename": filename,
-                                        "logtype": "contingency" if os.path.splitext(filename)[1] == ".jez" else "main",
-                                        "rownum": row.number,
-                                        "timestamp": row.timestamp.astimezone(timezone.utc),
-                                        "level": row.level,
-                                        "vm_id": row.vm_id,
-                                        "app": row.app,
-                                        "message": row.message,
-                                        "message_template": row.message_template,
-                                        "message_params": dict_process(row.message_params),
-                                        "hash": "{:016X}".format(row.hash),
-                                        "event": { "dataset": "vmlogs" }
-                                    })
-                                    yield doc
-                        
-                        doc = {
-                            "_index": "voting-machine-logfiles",
-                            "_id": get_index_id(filename),
-                        }
-                        doc.update(commonfields)
-                        doc.update({
-                            "logfilename": log_filename,
-                            "timestamp": datetime.utcnow(),
-                            "event": { "dataset": "vmlogfiles" }
-                        })
-                        yield doc
-
-                    def upload(wname, fname, cl, ac):
-                        try:
-                            result = bulk(client=cl, actions=ac, chunk_size=1000)
-                            logger.info("%s | Sent %s: %d docs", wname, fname, result[0])
-                        except TransportError as ex:
-                            logger.warning("%s | Transport error on %s: %s", wname, fname, repr(ex))
-                                        
-                    actions = [action for action in gen_actions()]
-                    fut = asyncio.get_event_loop().run_in_executor(pool, functools.partial(upload, worker_name(), log_filename, es_client, actions))
-                    upload_tasks.append(fut)
-                    await asyncio.sleep(0.01)
-
-                    logger.info("%s | Processed %s", worker_name(), log_filename)
-
-            await asyncio.wait(upload_tasks)
+    evt.wait()
 
 def collect_all_files() -> pd.Series:
     expected_total = 2360133
@@ -327,7 +333,7 @@ def create_voting_machine_logfiles_index(client):
         }
     )
 
-async def main():
+def main():
     logging.basicConfig(level=logging.INFO)
     disable_gc_diagnosis()
 
@@ -341,16 +347,18 @@ async def main():
     create_voting_machine_logs_index(es_client)
     create_voting_machine_logfiles_index(es_client)
 
-    async with Client(LocalCluster(n_workers=4, threads_per_worker=1, silence_logs=False), asynchronous=True) as client:
+    with Client(LocalCluster(processes = True, n_workers=4, threads_per_worker=1, silence_logs=False)) as client:
         logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
 
         all_files = collect_all_files()
         already_indexed = collect_indexed_files(es_client)
         to_index = all_files[~all_files.index.isin(already_indexed)]
-        logging.info("Will index %d files", len(to_index))
 
-        c = client.map(part, np.array_split(to_index, 20), pure=False)
+        split = max(int(len(to_index) / 500), 1)
+        logging.info("Will index %d files in %d chunks", len(to_index), split)
+
+        c = client.map(part, np.array_split(to_index, split), pure=False)
         wait(c)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
