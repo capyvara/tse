@@ -327,7 +327,7 @@ def create_voting_machine_logfiles_index(client):
         }
     )
 
-def main():
+async def main():
     logging.basicConfig(level=logging.INFO)
     disable_gc_diagnosis()
 
@@ -341,7 +341,7 @@ def main():
     create_voting_machine_logs_index(es_client)
     create_voting_machine_logfiles_index(es_client)
 
-    with Client(LocalCluster(n_workers=4, threads_per_worker=1, silence_logs=False)) as client:
+    async with Client(LocalCluster(n_workers=4, threads_per_worker=1, silence_logs=False), asynchronous=True) as client:
         logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
 
         all_files = collect_all_files()
@@ -353,4 +353,4 @@ def main():
         wait(c)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
