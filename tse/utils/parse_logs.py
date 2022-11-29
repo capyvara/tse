@@ -122,7 +122,8 @@ def expand_logs_thread(df, q, e, wname):
                     "section": section,
                 }
             
-                docs = list()
+                docs = []
+
                 with zip.open(log_filename) as file:
                     for filename, bio in log_processor.read_compressed_logs(file, log_filename):
                         for row in log_processor.parse_log(bio, filename):
@@ -145,7 +146,7 @@ def expand_logs_thread(df, q, e, wname):
                                 "hash": "{:016X}".format(row.hash),
                                 "event": { "dataset": "vmlogs" }
                             })
-                            list.append(doc)
+                            docs.append(doc)
                 
                 doc = {
                     "_index": "voting-machine-logfiles",
@@ -157,9 +158,14 @@ def expand_logs_thread(df, q, e, wname):
                     "timestamp": datetime.utcnow(),
                     "event": { "dataset": "vmlogfiles" }
                 })
+                docs.append(doc)
                 
                 q.put((log_filename, docs))
                 logger.info("%s | Processed %s", wname, log_filename)
+    del cities
+    del log_processor
+    cities = None
+    log_processor = None
     e.set()
 
 def part(partition):
