@@ -1,13 +1,13 @@
+import functools
 import os
 import zipfile
 import logging
 import base64
 from datetime import datetime, timezone, time
-import dask
 import mmh3
 import re
+import numpy as np
 import orjson
-import dask.dataframe as daf
 from distributed.utils_perf import disable_gc_diagnosis
 from distributed import Client, LocalCluster, progress, get_worker, wait
 import pandas as pd
@@ -17,6 +17,9 @@ from tse.parsers import CityConfigParser
 
 from elasticsearch import Elasticsearch, TransportError
 from elasticsearch.helpers import bulk
+
+import asyncio
+import concurrent.futures
 
 pd.options.mode.string_storage = "pyarrow"
 DOWNLOAD_DIR = "data/download/dadosabertos/transmitted"
@@ -31,7 +34,7 @@ def scan_dir(dir):
                 continue
 
             if os.path.splitext(entry.name)[1] == ".zip":
-                # if not "_AC" in entry.name:
+                # if not "_ZZ" in entry.name:
                 #     continue
 
                 with zipfile.ZipFile(entry.path, "r") as zip:
@@ -76,10 +79,7 @@ def worker_name():
     except ValueError:
         return ""
 
-def part(partition, partition_info=None):
-    if not partition_info:
-        return partition
-
+async def part(partition):
     logger = logging.getLogger("distributed.worker")
 
     es_loggers = logging.getLogger("elastic_transport.transport")
@@ -106,85 +106,95 @@ def part(partition, partition_info=None):
         set_index(["zip_filename", "log_filename"]).sort_index()
     )
 
-    for zip_filename, group in df.groupby(level=0):
-        zip_path = os.path.join(DOWNLOAD_DIR, zip_filename)
-        logger.info("%s | Opened zip %s", worker_name(), zip_filename)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        upload_tasks = []
 
-        zip_match = zip_regex.match(zip_filename)
-        year = zip_match.group("year")
-        round = zip_match.group("round")
-        state = zip_match.group("state")
+        for zip_filename, group in df.groupby(level=0):
+            zip_path = os.path.join(DOWNLOAD_DIR, zip_filename)
+            logger.info("%s | Opened zip %s", worker_name(), zip_filename)
 
-        with zipfile.ZipFile(zip_path, "r") as zip:
-            for entry in group.itertuples(True):
-                log_ext = VotingMachineFiles.get_voting_machine_files_map(entry.extensions)[VotingMachineFiles.FileType.LOG]
-                log_filename = entry.Index[1] + log_ext
+            zip_match = zip_regex.match(zip_filename)
+            year = zip_match.group("year")
+            round = zip_match.group("round")
+            state = zip_match.group("state")
 
-                file_match = file_regex.match(log_filename)
-                plea = file_match.group("plea").lstrip("0")
-                city = file_match.group("city").lstrip("0")
-                zone = file_match.group("zone").lstrip("0")
-                section = file_match.group("section").lstrip("0")
+            with zipfile.ZipFile(zip_path, "r") as zip:
+                for entry in group.itertuples(True):
+                    log_ext = VotingMachineFiles.get_voting_machine_files_map(entry.extensions)[VotingMachineFiles.FileType.LOG]
+                    log_filename = entry.Index[1] + log_ext
 
-                city_info = cities.loc[(state, city)]
+                    file_match = file_regex.match(log_filename)
+                    plea = file_match.group("plea").lstrip("0")
+                    city = file_match.group("city").lstrip("0")
+                    zone = file_match.group("zone").lstrip("0")
+                    section = file_match.group("section").lstrip("0")
 
-                commonfields = {
-                    "year": int(year),
-                    "round": int(round),
-                    "plea": plea,
-                    "state": state,
-                    "city": city,
-                    "city_ibge": city_info["CD_MUNICIPIO_IBGE"],
-                    "city_name": city_info["NM_MUNICIPIO"],
-                    "zone": zone,
-                    "section": section,
-                }
-            
-                def gen_docs():
-                    with zip.open(log_filename) as file:
-                        for filename, bio in log_processor.read_compressed_logs(file, log_filename):
-                            for row in log_processor.parse_log(bio, filename):
-                                doc = {
-                                    "_index": "voting-machine-logs",
-                                    "_id": get_index_id(filename, row.number),
-                                }
-                                doc.update(commonfields)
-                                doc.update({
-                                    "logfilename": filename,
-                                    "logtype": "contingency" if os.path.splitext(filename)[1] == ".jez" else "main",
-                                    "rownum": row.number,
-                                    "timestamp": row.timestamp.astimezone(timezone.utc),
-                                    "level": row.level,
-                                    "vm_id": row.vm_id,
-                                    "app": row.app,
-                                    "message": row.message,
-                                    "message_template": row.message_template,
-                                    "message_params": dict_process(row.message_params),
-                                    "hash": "{:016X}".format(row.hash),
-                                    "event": { "dataset": "vmlogs" }
-                                })
-                                yield doc
-                    
-                    doc = {
-                        "_index": "voting-machine-logfiles",
-                        "_id": get_index_id(filename),
+                    city_info = cities.loc[(state, city)]
+
+                    commonfields = {
+                        "year": int(year),
+                        "round": int(round),
+                        "plea": plea,
+                        "state": state,
+                        "city": city,
+                        "city_ibge": city_info["CD_MUNICIPIO_IBGE"],
+                        "city_name": city_info["NM_MUNICIPIO"],
+                        "zone": zone,
+                        "section": section,
                     }
-                    doc.update(commonfields)
-                    doc.update({
-                        "logfilename": log_filename,
-                        "timestamp": datetime.utcnow(),
-                        "event": { "dataset": "vmlogfiles" }
-                    })
-                    yield doc
+                
+                    def gen_actions():
+                        with zip.open(log_filename) as file:
+                            for filename, bio in log_processor.read_compressed_logs(file, log_filename):
+                                for row in log_processor.parse_log(bio, filename):
+                                    doc = {
+                                        "_index": "voting-machine-logs",
+                                        "_id": get_index_id(filename, row.number),
+                                    }
+                                    doc.update(commonfields)
+                                    doc.update({
+                                        "logfilename": filename,
+                                        "logtype": "contingency" if os.path.splitext(filename)[1] == ".jez" else "main",
+                                        "rownum": row.number,
+                                        "timestamp": row.timestamp.astimezone(timezone.utc),
+                                        "level": row.level,
+                                        "vm_id": row.vm_id,
+                                        "app": row.app,
+                                        "message": row.message,
+                                        "message_template": row.message_template,
+                                        "message_params": dict_process(row.message_params),
+                                        "hash": "{:016X}".format(row.hash),
+                                        "event": { "dataset": "vmlogs" }
+                                    })
+                                    yield doc
+                        
+                        doc = {
+                            "_index": "voting-machine-logfiles",
+                            "_id": get_index_id(filename),
+                        }
+                        doc.update(commonfields)
+                        doc.update({
+                            "logfilename": log_filename,
+                            "timestamp": datetime.utcnow(),
+                            "event": { "dataset": "vmlogfiles" }
+                        })
+                        yield doc
 
-                try:
-                    bulk(client=es_client, actions=gen_docs(), chunk_size=1000)
-                    logger.info("%s | Finished %s", worker_name(), log_filename)
-                except TransportError as ex:
-                    logger.warning("%s | Transport error on %s: %s", worker_name(), log_filename, repr(ex))
-                    pass
+                    def upload(wname, fname, cl, ac):
+                        try:
+                            result = bulk(client=cl, actions=ac, chunk_size=1000)
+                            logger.info("%s | Sent %s: %d docs", wname, fname, result[0])
+                        except TransportError as ex:
+                            logger.warning("%s | Transport error on %s: %s", wname, fname, repr(ex))
+                                        
+                    actions = [action for action in gen_actions()]
+                    fut = asyncio.get_event_loop().run_in_executor(pool, functools.partial(upload, worker_name(), log_filename, es_client, actions))
+                    upload_tasks.append(fut)
+                    await asyncio.sleep(0.01)
 
-    return partition
+                    logger.info("%s | Processed %s", worker_name(), log_filename)
+
+            await asyncio.wait(upload_tasks)
 
 def collect_all_files() -> pd.Series:
     expected_total = 2360133
@@ -316,6 +326,7 @@ def create_voting_machine_logfiles_index(client):
             }
         }
     )
+
 def main():
     logging.basicConfig(level=logging.INFO)
     disable_gc_diagnosis()
@@ -330,25 +341,16 @@ def main():
     create_voting_machine_logs_index(es_client)
     create_voting_machine_logfiles_index(es_client)
 
-    def process(client = None):
+    with Client(LocalCluster(n_workers=4, threads_per_worker=1, silence_logs=False)) as client:
+        logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
+
         all_files = collect_all_files()
         already_indexed = collect_indexed_files(es_client)
         to_index = all_files[~all_files.index.isin(already_indexed)]
         logging.info("Will index %d files", len(to_index))
 
-        to_index = daf.from_pandas(to_index, chunksize=1000)
-        a = to_index.map_partitions(part)
-        x = a.persist()
-        if client:
-            progress(x)
-        x.compute()
-
-    with Client(LocalCluster(n_workers=16, threads_per_worker=1, silence_logs=False)) as client:
-        logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
-        process(client)
-
-    # dask.config.set(scheduler='single-threaded') # Debug
-    # process()
+        c = client.map(part, np.array_split(to_index, 20), pure=False)
+        wait(c)
 
 if __name__ == "__main__":
     main()
