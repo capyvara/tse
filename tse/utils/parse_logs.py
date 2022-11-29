@@ -198,13 +198,8 @@ def part(partition):
             logger.info("%s | Sent %s (%d docs)", worker_name(), log_filename, len(docs))
             que.task_done()
     
-    count = 0
-    pb = parallel_bulk(client=es_client, actions=get_docs(), chunk_size=10000, thread_count=8, raise_on_error=False)
+    pb = parallel_bulk(client=es_client, actions=get_docs(), chunk_size=1000, thread_count=8, raise_on_error=False)
     while True:
-        count += 1
-        if count % 100 == 0:
-            gc.collect()
-
         try:
             next(pb)
         except StopIteration:
@@ -214,8 +209,13 @@ def part(partition):
 
     evt.wait()
     del df
+    del q
     df = None
+    q = None
+    pb = None
+    gc.collect()
     logger.info("Finished part")
+    return None
 
 def collect_all_files() -> pd.Series:
     expected_total = 2360133
@@ -369,7 +369,7 @@ def main():
         already_indexed = collect_indexed_files(es_client)
         to_index = all_files[~all_files.index.isin(already_indexed)]
 
-        split = max(int(len(to_index) / 100), 1)
+        split = max(int(len(to_index) / 50), 1)
         logging.info("Will index %d files in %d chunks", len(to_index), split)
 
         c = client.map(part, np.array_split(to_index, split), pure=False)
