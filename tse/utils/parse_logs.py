@@ -1,5 +1,4 @@
 from collections import deque
-import functools
 import os
 from threading import Thread, Event
 import zipfile
@@ -11,7 +10,7 @@ import re
 import numpy as np
 import orjson
 from distributed.utils_perf import disable_gc_diagnosis
-from distributed import Client, LocalCluster, progress, get_worker, wait
+from distributed import Client, LocalCluster, get_worker, wait
 import pandas as pd
 from tse.common.voting_machine_files import VotingMachineFiles, VotingMachineLogProcessor
 from tse.utils import log_progress
@@ -20,9 +19,8 @@ from tse.parsers import CityConfigParser
 from elasticsearch import Elasticsearch, TransportError
 from elasticsearch.helpers import bulk, parallel_bulk
 
-import asyncio
 import queue
-import concurrent.futures
+import gc
 
 pd.options.mode.string_storage = "pyarrow"
 DOWNLOAD_DIR = "data/download/dadosabertos/transmitted"
@@ -198,7 +196,12 @@ def part(partition):
             logger.info("%s | Sent %s (%d docs)", worker_name(), log_filename, len(docs))
             yield from docs
     
-    deque(parallel_bulk(client=es_client, actions=get_docs(), chunk_size=10000, thread_count=8, raise_on_error=False), 0)
+    count = 0
+    pb = parallel_bulk(client=es_client, actions=get_docs(), chunk_size=10000, thread_count=8, raise_on_error=False)
+    for success, info in pb:
+        count += 1
+        if count % 100 != 0:
+            gc.collect()
 
     evt.wait()
 
@@ -256,14 +259,14 @@ def create_voting_machine_logs_index(client: Elasticsearch):
             "number_of_shards": 1, 
             "codec": "best_compression",
             "query": {
-                "default_field": "row.message"
+                "default_field": "message"
             }
         },
         mappings={
             "dynamic_templates": [
                 {
                     "string_as_keyword": {
-                        "path_match": "row.message_params.*",
+                        "path_match": "message_params.*",
                         "match_mapping_type": "string",
                         "mapping": {
                             "type": "keyword",
