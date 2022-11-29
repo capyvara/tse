@@ -122,45 +122,42 @@ def expand_logs_thread(df, q, e, wname):
                     "section": section,
                 }
             
-                def gen_docs():
-                    with zip.open(log_filename) as file:
-                        for filename, bio in log_processor.read_compressed_logs(file, log_filename):
-                            for row in log_processor.parse_log(bio, filename):
-                                doc = {
-                                    "_index": "voting-machine-logs",
-                                    "_id": get_index_id(filename, row.number),
-                                }
-                                doc.update(commonfields)
-                                doc.update({
-                                    "logfilename": filename,
-                                    "logtype": "contingency" if os.path.splitext(filename)[1] == ".jez" else "main",
-                                    "rownum": row.number,
-                                    "timestamp": row.timestamp.astimezone(timezone.utc),
-                                    "level": row.level,
-                                    "vm_id": row.vm_id,
-                                    "app": row.app,
-                                    "message": row.message,
-                                    "message_template": row.message_template,
-                                    "message_params": dict_process(row.message_params),
-                                    "hash": "{:016X}".format(row.hash),
-                                    "event": { "dataset": "vmlogs" }
-                                })
-                                yield doc
-                    
-                    doc = {
-                        "_index": "voting-machine-logfiles",
-                        "_id": get_index_id(filename),
-                    }
-                    doc.update(commonfields)
-                    doc.update({
-                        "logfilename": log_filename,
-                        "timestamp": datetime.utcnow(),
-                        "event": { "dataset": "vmlogfiles" }
-                    })
-                    
-                    yield doc
-
-                docs = list(gen_docs())
+                docs = list()
+                with zip.open(log_filename) as file:
+                    for filename, bio in log_processor.read_compressed_logs(file, log_filename):
+                        for row in log_processor.parse_log(bio, filename):
+                            doc = {
+                                "_index": "voting-machine-logs",
+                                "_id": get_index_id(filename, row.number),
+                            }
+                            doc.update(commonfields)
+                            doc.update({
+                                "logfilename": filename,
+                                "logtype": "contingency" if os.path.splitext(filename)[1] == ".jez" else "main",
+                                "rownum": row.number,
+                                "timestamp": row.timestamp.astimezone(timezone.utc),
+                                "level": row.level,
+                                "vm_id": row.vm_id,
+                                "app": row.app,
+                                "message": row.message,
+                                "message_template": row.message_template,
+                                "message_params": dict_process(row.message_params),
+                                "hash": "{:016X}".format(row.hash),
+                                "event": { "dataset": "vmlogs" }
+                            })
+                            list.append(doc)
+                
+                doc = {
+                    "_index": "voting-machine-logfiles",
+                    "_id": get_index_id(filename),
+                }
+                doc.update(commonfields)
+                doc.update({
+                    "logfilename": log_filename,
+                    "timestamp": datetime.utcnow(),
+                    "event": { "dataset": "vmlogfiles" }
+                })
+                
                 q.put((log_filename, docs))
                 logger.info("%s | Processed %s", wname, log_filename)
     e.set()
@@ -198,7 +195,7 @@ def part(partition):
             logger.info("%s | Sent %s (%d docs)", worker_name(), log_filename, len(docs))
             que.task_done()
     
-    pb = parallel_bulk(client=es_client, actions=get_docs(), chunk_size=1000, thread_count=8, raise_on_error=False)
+    pb = parallel_bulk(client=es_client, actions=get_docs(), chunk_size=5000, thread_count=8, raise_on_error=False)
     while True:
         try:
             next(pb)
