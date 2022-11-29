@@ -195,6 +195,7 @@ def part(partition):
             log_filename, docs = que.get()
             logger.info("%s | Sent %s (%d docs)", worker_name(), log_filename, len(docs))
             yield from docs
+            que.task_done()
     
     count = 0
     pb = parallel_bulk(client=es_client, actions=get_docs(), chunk_size=10000, thread_count=8, raise_on_error=False)
