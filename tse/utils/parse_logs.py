@@ -167,6 +167,7 @@ def expand_logs_thread(df, q, e, wname):
 
 def part(partition):
     logger = logging.getLogger("distributed.worker")
+    disable_gc_diagnosis()
 
     df = (
         partition.reset_index().
@@ -179,7 +180,7 @@ def part(partition):
 
     que = queue.Queue(10)
     evt = Event()
-    Thread(target=expand_logs_thread, args=(df, que, evt, worker_name()), daemon=True).start()
+    Thread(target=expand_logs_thread, args=(df, que, evt, worker_name())).start()
 
     es_loggers = logging.getLogger("elastic_transport.transport")
     es_loggers.setLevel(logging.WARNING)
@@ -193,18 +194,28 @@ def part(partition):
     def get_docs():
         while not evt.is_set():
             log_filename, docs = que.get()
-            logger.info("%s | Sent %s (%d docs)", worker_name(), log_filename, len(docs))
             yield from docs
+            logger.info("%s | Sent %s (%d docs)", worker_name(), log_filename, len(docs))
             que.task_done()
     
     count = 0
     pb = parallel_bulk(client=es_client, actions=get_docs(), chunk_size=10000, thread_count=8, raise_on_error=False)
-    for success, info in pb:
+    while True:
         count += 1
-        if count % 500 == 0:
+        if count % 100 == 0:
             gc.collect()
 
+        try:
+            next(pb)
+        except StopIteration:
+            break
+        except TransportError:
+            continue
+
     evt.wait()
+    del df
+    df = None
+    logger.info("Finished part")
 
 def collect_all_files() -> pd.Series:
     expected_total = 2360133
@@ -339,7 +350,6 @@ def create_voting_machine_logfiles_index(client):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    disable_gc_diagnosis()
 
     es_client = Elasticsearch(
         cloud_id=CLOUD_ID,
@@ -352,13 +362,14 @@ def main():
     create_voting_machine_logfiles_index(es_client)
 
     with Client(LocalCluster(processes = True, n_workers=4, threads_per_worker=1, silence_logs=False)) as client:
+        disable_gc_diagnosis()
         logging.info("Init client: %s, dashboard: %s", client, client.dashboard_link)
 
         all_files = collect_all_files()
         already_indexed = collect_indexed_files(es_client)
         to_index = all_files[~all_files.index.isin(already_indexed)]
 
-        split = max(int(len(to_index) / 500), 1)
+        split = max(int(len(to_index) / 100), 1)
         logging.info("Will index %d files in %d chunks", len(to_index), split)
 
         c = client.map(part, np.array_split(to_index, split), pure=False)
